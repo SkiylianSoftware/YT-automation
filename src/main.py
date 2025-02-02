@@ -1,82 +1,21 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
+from pathlib import Path
 
-from dotenv import load_dotenv
-from pyyoutube import AccessToken, Channel, Client, Playlist, Video
+from pyyoutube import Playlist, Video
+
+from .youtube import YouTube
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s", filename="application.log"
 )
 
-PLAYLIST_REGEX = re.compile(r"(?P<series_name>[^\-]+)\- (?P<game_name>.*)")
+PLAYLIST_REGEX = re.compile(r"(:?(?P<series>[^\-]+)\- )?(?P<category>.*)")
 VIDEO_REGEX = re.compile(
-    r"(?P<game_name>[^:]+): (?P<series_name>[^#]+)#(?P<ep_number>\d+) \- (?P<title>.*)"
+    r"(?P<category>[^:]+)(:?: (?P<series>[^#]+))?#(?P<ep_number>\d+) \- (?P<title>.*)"
 )
-
-
-def get_client() -> Client:
-    load_dotenv(".env.client")
-    load_dotenv(".env.token")
-    client = Client(
-        client_id=os.getenv("client_id"),
-        client_secret=os.getenv("client_secret"),
-        access_token=os.getenv("access_token"),
-        refresh_token=os.getenv("refresh_token"),
-    )
-    # refresh the token
-    if client._has_auth_credentials():
-        token: AccessToken = client.refresh_access_token(client.refresh_token)
-        token.refresh_token = client.refresh_token
-    # or generate new
-    else:
-        auth_url, _ = client.get_authorize_url()
-        print(f"Visit {auth_url} to authorise the application.")
-        auth_response = input("Insert the redirect URL after authenticating here:\n> ")
-        token = client.generate_access_token(authorization_response=auth_response)
-
-    # Save the token for next time
-    with open(".env.token", "w") as f:
-        f.write(
-            "\n".join(
-                [
-                    f"access_token={token.access_token}",
-                    f"refresh_token={token.refresh_token}",
-                ]
-            )
-        )
-
-    client.access_token = token.access_token
-    client.refresh_token = token.refresh_token
-
-    return client
-
-
-def get_channel(client: Client) -> Channel:
-    return client.channels.list(mine=True).items[0]
-
-
-def get_videos_in_playlist(client: Client, playlist_id: str) -> list[Video]:
-    videos: list[Video] = []
-    for item in client.playlistItems.list(
-        playlist_id=playlist_id, max_results=int(1e6)
-    ).items:
-        videos.extend(client.videos.list(video_id=item.contentDetails.videoId).items)
-    return videos
-
-
-def get_channel_videos(client: Client, channel: Channel) -> list[Video]:
-    if upload_playlist := channel.contentDetails.relatedPlaylists.uploads:
-        uploads = get_videos_in_playlist(client, playlist_id=upload_playlist)
-        return [vid for vid in uploads if vid.status.privacyStatus == "public"]
-    return []
-
-
-def get_channel_playlists(client: Client, channel: Channel) -> list[Playlist]:
-    found_playlists = client.playlists.list(channel_id=channel.id)
-    return found_playlists.items
 
 
 def game_to_short(game_name: str) -> str:
@@ -94,14 +33,14 @@ def playlist_mapping(playlists: list[Playlist]) -> dict[str, dict[str, Playlist]
     mapping: dict[str, dict[str, Playlist]] = {}
     for playlist in playlists:
         if search := PLAYLIST_REGEX.search(playlist.snippet.title):
-            game_name: str = search.group("game_name").strip()
-            series_name: str = search.group("series_name").strip()
-            shorthand = game_to_short(game_name)
+            category: str = search.group("category").strip()
+            series: str = str(search.group("series")).strip()
+            shorthand = game_to_short(category)
 
             if shorthand not in mapping:
                 mapping[shorthand] = {}
 
-            mapping[shorthand][series_name] = playlist
+            mapping[shorthand][series] = playlist
 
     return mapping
 
@@ -113,22 +52,22 @@ def video_mapping(videos: list[Video]) -> dict[str, dict[str, list[Video]]]:
     mapping: dict[str, dict[str, list[Video]]] = {}
     for video in videos:
         if search := VIDEO_REGEX.search(video.snippet.title):
-            game_name: str = search.group("game_name").strip()
-            series_name: str = search.group("series_name").strip()
-            shorthand = game_to_short(game_name)
+            category: str = search.group("category").strip()
+            series: str = str(search.group("series")).strip()
+            shorthand = game_to_short(category)
 
             if shorthand not in mapping.keys():
                 mapping[shorthand] = {}
-            if series_name not in mapping[shorthand].keys():
-                mapping[shorthand][series_name] = []
+            if series not in mapping[shorthand].keys():
+                mapping[shorthand][series] = []
 
-            mapping[shorthand][series_name].append(video)
+            mapping[shorthand][series].append(video)
 
     return mapping
 
 
 def find_videos_not_in_playlists(
-    client: Client,
+    yt: YouTube,
     playlists: dict[str, dict[str, Playlist]],
     videos: dict[str, dict[str, list[Video]]],
 ) -> list[tuple[Video, Playlist]]:
@@ -139,7 +78,7 @@ def find_videos_not_in_playlists(
     for game, serieses in videos.items():
         for series, vids in serieses.items():
             if pl := playlists.get(game, {}).get(series, {}):
-                pl_vids = get_videos_in_playlist(client, pl.id)
+                pl_vids = yt.playlist_videos(pl.id)
                 pl_ids = [pl_vid.id for pl_vid in pl_vids]
                 for vid in vids:
                     if vid.id not in pl_ids:
@@ -149,22 +88,11 @@ def find_videos_not_in_playlists(
 
 
 def add_video_to_playlists(
-    client: Client, missing_vids: list[tuple[Video, Playlist]]
+    yt: YouTube, missing_vids: list[tuple[Video, Playlist]]
 ) -> None:
     for video, playlist in missing_vids:
         try:
-            client.playlistItems.insert(
-                parts="snippet",
-                body={
-                    "snippet": {
-                        "playlistId": playlist.id,
-                        "resourceId": {
-                            "kind": "youtube#video",
-                            "videoId": video.id,
-                        },
-                    }
-                },
-            )
+            yt.add_to_playlist(playlist, video)
             logging.debug(
                 f"Successfully added {video.snippet.title} to {playlist.snippet.title}!"
             )
@@ -176,35 +104,38 @@ def add_video_to_playlists(
 
 
 def main() -> int:
-    client = get_client()
+    yt = YouTube(client_env=Path(".env.client"), token_env=Path(".env.token"))
+    yt.authenticate()
+
+    client = yt.client
     logging.debug(f"Logged in with {client}")
 
     # Fetch channel
-    channel = get_channel(client)
+    channel = yt.me
     logging.debug(f"Found channel: {channel.brandingSettings.channel.title}")
 
     # Fetch playlists
-    channel_playlists = get_channel_playlists(client, channel)
-    logging.debug(f"Found playlists: {channel_playlists}")
+    channel_playlists = yt.playlists
+    logging.debug(f"Found playlists: {yt.show(channel_playlists)}")
 
     # Create playlist mapping
     playlists = playlist_mapping(channel_playlists)
     logging.debug(f"Playlist mapping: {playlists}")
 
     # Fetch uploads
-    channel_videos = get_channel_videos(client, channel)
-    logging.debug(f"Found videos: {channel_videos}")
+    channel_videos = yt.public_videos
+    logging.debug(f"Found videos: {yt.show(channel_videos)}")
 
     # create video mapping
     videos = video_mapping(channel_videos)
     logging.debug(f"Video mapping: {videos}")
 
     # check all videos are in the correct playlists
-    missing_from_playlists = find_videos_not_in_playlists(client, playlists, videos)
+    missing_from_playlists = find_videos_not_in_playlists(yt, playlists, videos)
 
     # add video to playlist if missing
     if missing_from_playlists:
-        add_video_to_playlists(client, missing_from_playlists)
+        add_video_to_playlists(yt, missing_from_playlists)
     else:
         logging.info("No videos are missing from their respective playlists!")
 
