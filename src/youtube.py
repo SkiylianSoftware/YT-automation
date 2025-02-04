@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from logging import getLogger, Logger
 
 from dotenv import load_dotenv
 from pyyoutube import AccessToken, Channel, Client, Playlist, Video
@@ -16,6 +17,10 @@ class YouTube:
 
     client: Client = None
 
+    @property
+    def logger(self) -> Logger:
+        return getLogger("youtube-api")
+
     def _write_token(self, token: AccessToken) -> None:
         self.token_env.write_text(
             "\n".join(
@@ -25,6 +30,7 @@ class YouTube:
                 ]
             )
         )
+        self.logger.debug(f"Wrote access_token to {self.token_env}")
 
     def _oath_ctx(self) -> AccessToken:
         if not self.client:
@@ -32,22 +38,31 @@ class YouTube:
                 "Cannot generate an OAuth redirect when client "
                 "is uninitialised!\nRun YouTube.authenticate() instead."
             )
+        self.logger.debug("Access token not found, requesting authorisation")
         auth_url, _ = self.client.get_authorize_url()
         print(f"Visit {auth_url} to authorise this application.")
-        return self.client.generate_access_token(
+        token = self.client.generate_access_token(
             authorization_response=input("Insert the redirect URL here:\n> ")
         )
+        self.logger.debug("Auth complete")
+        return token
 
     def authenticate(self) -> None:
+        if not self.client_env.exists():
+            raise FileExistsError("Client environment file does not exist!")
+        if not self.token_env.exists():
+            raise FileExistsError("Token environment file does not exist!")
+
         load_dotenv(str(self.client_env.resolve()))
         load_dotenv(str(self.token_env.resolve()))
-
+        
         self.client = Client(
             client_id=os.getenv("client_id"),
             client_secret=os.getenv("client_secret"),
             access_token=os.getenv("access_token"),
             refresh_token=os.getenv("refresh_token"),
         )
+        self.logger.debug(f"Authenticating with client {self.client.client_id}")
 
         token: AccessToken = (
             self.client.refresh_access_token(self.client.refresh_token)
@@ -55,6 +70,7 @@ class YouTube:
             else self._oath_ctx()
         )
         token.refresh_token = token.refresh_token or self.client.refresh_token
+        self.logger.debug(f"Loaded access token, expires in {token.expires_in}s")
 
         self.client.access_token = token.access_token
         self.client.refresh_token = token.refresh_token
