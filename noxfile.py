@@ -93,6 +93,7 @@ def clean(session: nox.session) -> None:
 @nox.session(tags=["test", "check"])
 def tests(session: nox.session) -> None:
     session.install("pytest")
+    session.install("pytest-mock")
     session.install("coverage")
     session.install("-r", requirements)
 

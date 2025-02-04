@@ -7,36 +7,10 @@ from pathlib import Path
 from .playlist_automation import playlist_automation
 from .youtube import YouTube
 
-logging.config.dictConfig(
-    {
-        "version": 1,
-        "formatters": {
-            "default": {"format": "%(name)s: %(message)s"},
-            "file": {"format": "[%(asctime)s] %(name)s: %(message)s"},
-        },
-        "handlers": {
-            "file": {
-                "class": "logging.FileHandler",
-                "level": "DEBUG",
-                "formatter": "file",
-                "filename": "application.log",
-                "mode": "a",
-            },
-            "stream": {
-                "class": "logging.StreamHandler",
-                "level": "INFO",
-                "formatter": "default",
-                "stream": "ext://sys.stdout",
-            },
-        },
-        "root": {"level": "DEBUG", "handlers": ["file", "stream"]},
-    }
-)
-
-LOG = getLogger("main")
-
 
 def main() -> int:
+    LOG = getLogger("main")
+
     parser = ArgumentParser(description="YouTube Automation scripts")
 
     # Shared arguments come before sub-command arguments
@@ -77,4 +51,30 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    logging.config.dictConfig(
+        {
+            "version": 1,
+            "formatters": {
+                "default": {"format": "%(name)s: %(message)s"},
+                "file": {"format": "[%(asctime)s] %(name)s: %(message)s"},
+            },
+            "handlers": {
+                "file": {
+                    "class": "logging.FileHandler",
+                    "level": "DEBUG",
+                    "formatter": "file",
+                    "filename": "application.log",
+                    "mode": "a",
+                },
+                "stream": {
+                    "class": "logging.StreamHandler",
+                    "level": "INFO",
+                    "formatter": "default",
+                    "stream": "ext://sys.stdout",
+                },
+            },
+            "root": {"level": "DEBUG", "handlers": ["file", "stream"]},
+        }
+    )
+
     sys.exit(main())
