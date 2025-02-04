@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from logging import getLogger
 import re
+from logging import getLogger
 
 from pyyoutube import Playlist, Video
 

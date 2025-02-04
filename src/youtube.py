@@ -3,8 +3,8 @@
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from logging import Logger, getLogger
 from pathlib import Path
-from logging import getLogger, Logger
 
 from dotenv import load_dotenv
 from pyyoutube import AccessToken, Channel, Client, Playlist, Video
@@ -55,7 +55,7 @@ class YouTube:
 
         load_dotenv(str(self.client_env.resolve()))
         load_dotenv(str(self.token_env.resolve()))
-        
+
         self.client = Client(
             client_id=os.getenv("client_id"),
             client_secret=os.getenv("client_secret"),

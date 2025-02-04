@@ -1,7 +1,7 @@
-from logging import getLogger
 import logging.config
 import sys
 from argparse import ArgumentParser
+from logging import getLogger
 from pathlib import Path
 
 from .playlist_automation import playlist_automation
@@ -34,6 +34,7 @@ logging.config.dictConfig(
 )
 
 LOG = getLogger("main")
+
 
 def main() -> int:
     parser = ArgumentParser(description="YouTube Automation scripts")
