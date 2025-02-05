@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 from src.playlist_automation import (
     game_to_short,
@@ -8,14 +9,21 @@ from src.playlist_automation import (
 )
 
 
-class MockPlaylist:
-    def __init__(self, title):
+class MockResource:
+    def __init__(self, title: str):
         self.snippet = type("Snippet", (), {"title": title})
 
+    @property
+    def id(self) -> str:
+        return str(uuid4())
 
-class MockVideo:
-    def __init__(self, title):
-        self.snippet = type("Snippet", (), {"title": title})
+
+class MockPlaylist(MockResource):
+    pass
+
+
+class MockVideo(MockResource):
+    pass
 
 
 def test_game_to_short():
@@ -48,7 +56,7 @@ def test_video_mapping():
     assert result["KSP"]["Science"]
 
 
-def test_playlist_automation(mocker):
+def test_playlist_automation_fails(mocker):
     yt_mock = MagicMock()
     yt_mock.playlists = []
     yt_mock.public_videos = []
@@ -57,8 +65,12 @@ def test_playlist_automation(mocker):
     # Program fails if nothing is to be moved
     assert result == 1
 
-    yt_mock.playlists = [MagicMock()]
-    yt_mock.public_videos = [MagicMock()]
+
+# TODO: Get
+def test_playlist_automation_succeeds(mocker):
+    yt_mock = MagicMock()
+    yt_mock.playlists = [MockPlaylist("KSP - Test")]
+    yt_mock.public_videos = [MockVideo("KSP: Test #1 - title")]
     yt_mock.playlist_videos.return_value = []
 
     result = playlist_automation(yt_mock)
