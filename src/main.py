@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 from logging import getLogger
 from pathlib import Path
 
+from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
 from .youtube import YouTube
 
@@ -15,16 +16,10 @@ def main() -> int:
 
     # Shared arguments come before sub-command arguments
     parser.add_argument(
-        "--env-client",
+        "--env-youtube",
         type=Path,
-        default=Path(".env.client"),
-        help="Filepath for the youtube client credentials",
-    )
-    parser.add_argument(
-        "--env-token",
-        type=Path,
-        default=Path(".env.token"),
-        help="Filepath for the youtube access_token",
+        default=Path(".env.youtube"),
+        help="Filepath for the youtube credentials",
     )
 
     subcommands = parser.add_subparsers(help="sub-command help")
@@ -34,17 +29,35 @@ def main() -> int:
     playlist_parser = subcommands.add_parser("playlist-automation")
     playlist_parser.set_defaults(func=playlist_automation)
 
+    # Calendar automation
+    calendar_parser = subcommands.add_parser("calendar-automation")
+    calendar_parser.set_defaults(func=calendar_automation)
+    calendar_parser.add_argument(
+        "--env-calendar",
+        type=Path,
+        default=Path(".env.calendar"),
+        help="Filepath for the calendar credentials",
+    )
+    calendar_parser.add_argument(
+        "--timezone",
+        type=str,
+        default="UTC",
+        help="Timezone to use if creating new calendars, or adding events to calendars",
+    )
+
     # Parse arguments and execute
     args = parser.parse_args()
     if func := getattr(args, "func", None):
         try:
-            yt = YouTube(client_env=args.env_client, token_env=args.env_token)
+            yt = YouTube(youtube_env=args.env_youtube)
             yt.authenticate()
         except Exception as e:
             LOG.error("Could not authenticate to YouTube")
             LOG.error(e)
+            return 1
+
         LOG.info(f"Running entrypoint {func.__name__}")
-        return func(yt)
+        return func(args, yt)
 
     parser.print_help()
     return 0

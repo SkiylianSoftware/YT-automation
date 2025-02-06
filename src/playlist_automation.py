@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from argparse import Namespace
 from logging import getLogger
 
 from pyyoutube import Playlist, Video
@@ -100,7 +101,7 @@ def add_video_to_playlists(
             LOG.error(e)
 
 
-def playlist_automation(yt: YouTube) -> int:
+def playlist_automation(args: Namespace, yt: YouTube) -> int:
     # Fetch playlists
     channel_playlists = yt.playlists
     if not channel_playlists:

@@ -1,9 +1,11 @@
 """Wrapper script to interact with YouTube API using py-youtube."""
 
-import os
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from logging import Logger, getLogger
+from os import getenv
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -12,8 +14,7 @@ from pyyoutube import AccessToken, Channel, Client, Playlist, Video
 
 @dataclass
 class YouTube:
-    client_env: Path
-    token_env: Path
+    youtube_env: Path
 
     client: Client = None
 
@@ -21,16 +22,18 @@ class YouTube:
     def logger(self) -> Logger:
         return getLogger("youtube-api")
 
-    def _write_token(self, token: AccessToken) -> None:
-        self.token_env.write_text(
+    def _write_creds_(self, token: AccessToken) -> None:
+        self.youtube_env.write_text(
             "\n".join(
                 [
+                    f"client_id={self.client.client_id}",
+                    f"client_secret={self.client.client_secret}",
                     f"access_token={token.access_token}",
                     f"refresh_token={token.refresh_token}",
                 ]
             )
         )
-        self.logger.debug(f"Wrote access_token to {self.token_env}")
+        self.logger.debug(f"Wrote access_token to {self.youtube_env}")
 
     def _oath_ctx(self) -> AccessToken:
         if not self.client:
@@ -48,19 +51,16 @@ class YouTube:
         return token
 
     def authenticate(self) -> None:
-        if not self.client_env.exists():
-            raise FileExistsError("Client environment file does not exist!")
-        if not self.token_env.exists():
-            raise FileExistsError("Token environment file does not exist!")
+        if not self.youtube_env.exists():
+            raise FileExistsError("YouTube environment file does not exist!")
 
-        load_dotenv(str(self.client_env.resolve()))
-        load_dotenv(str(self.token_env.resolve()))
+        load_dotenv(str(self.youtube_env.resolve()))
 
         self.client = Client(
-            client_id=os.getenv("client_id"),
-            client_secret=os.getenv("client_secret"),
-            access_token=os.getenv("access_token"),
-            refresh_token=os.getenv("refresh_token"),
+            client_id=getenv("client_id"),
+            client_secret=getenv("client_secret"),
+            access_token=getenv("access_token"),
+            refresh_token=getenv("refresh_token"),
         )
         self.logger.debug(f"Authenticating with client {self.client.client_id}")
 
@@ -75,7 +75,7 @@ class YouTube:
         self.client.access_token = token.access_token
         self.client.refresh_token = token.refresh_token
 
-        self._write_token(token)
+        self._write_creds_(token)
 
     # Generic actions
 
@@ -87,6 +87,14 @@ class YouTube:
     @property
     def me(self) -> Channel:
         return self.client.channels.list(mine=True).items[0]
+
+    @property
+    def channel_name(self) -> str:
+        return self.me.brandingSettings.channel.title
+
+    @property
+    def safe_channel_name(self) -> str:
+        return self.channel_name.lower().replace(" ", "_").replace("-", "_")
 
     def channel(self, channel_id: str) -> Channel:
         return self.client.channels.list(channel_id=channel_id).items[0]
