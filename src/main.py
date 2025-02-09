@@ -1,17 +1,16 @@
 import logging.config
 import sys
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from logging import getLogger
 from pathlib import Path
+import os
 
 from .playlist_automation import playlist_automation
 from .youtube import YouTube
 
-
-def main() -> int:
-    LOG = getLogger("main")
-
-    parser = ArgumentParser(description="YouTube Automation scripts")
+def parse_args() -> tuple[ArgumentParser, Namespace]:
+    is_nox = "nox" in sys.orig_argv[0]
+    parser = ArgumentParser(description="YouTube Automation scripts", prog="nox --" if is_nox else __name__)
 
     # Shared arguments come before sub-command arguments
     parser.add_argument(
@@ -34,8 +33,14 @@ def main() -> int:
     playlist_parser = subcommands.add_parser("playlist-automation")
     playlist_parser.set_defaults(func=playlist_automation)
 
-    # Parse arguments and execute
-    args = parser.parse_args()
+    return parser, parser.parse_args()
+
+
+def main() -> int:
+    LOG = getLogger("main")
+
+    parser, args = parse_args()
+
     if func := getattr(args, "func", None):
         try:
             yt = YouTube(client_env=args.env_client, token_env=args.env_token)
