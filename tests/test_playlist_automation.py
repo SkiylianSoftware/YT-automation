@@ -57,22 +57,23 @@ def test_video_mapping():
 
 
 def test_playlist_automation_fails(mocker):
+    args = MagicMock()
     yt_mock = MagicMock()
     yt_mock.playlists = []
     yt_mock.public_videos = []
 
-    result = playlist_automation(yt_mock)
+    result = playlist_automation(args, yt_mock)
     # Program fails if nothing is to be moved
     assert result == 1
 
 
-# TODO: Get
 def test_playlist_automation_succeeds(mocker):
+    args = MagicMock()
     yt_mock = MagicMock()
     yt_mock.playlists = [MockPlaylist("KSP - Test")]
     yt_mock.public_videos = [MockVideo("KSP: Test #1 - title")]
     yt_mock.playlist_videos.return_value = []
 
-    result = playlist_automation(yt_mock)
+    result = playlist_automation(args, yt_mock)
     # program succeeds we hope
     assert result == 0

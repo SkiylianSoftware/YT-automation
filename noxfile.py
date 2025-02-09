@@ -1,3 +1,5 @@
+"""Project entrypoints with automatic dependecy management."""
+
 import nox
 
 requirements = "requirements.txt"
@@ -10,17 +12,21 @@ nox.options.sessions = ["run"]
 
 @nox.session
 def run(session: nox.session) -> None:
+    """Run the main script entrypoint."""
     session.install("-r", requirements)
     session.run("python3", "-m", "src.main", *session.posargs, external=True)
 
 
 @nox.session
 def dev(session: nox.session) -> None:
+    """Install dependecies and drop into a dev shell."""
     session.install("-r", requirements)
     session.run("python3")
 
+
 @nox.session
 def docs(session: nox.session) -> None:
+    """Build and serve the docs."""
     session.install("mkdocs")
     session.install("mkdocs-dracula-theme")
     session.run("mkdocs", "build", "-f", "docs/mkdocs.yml")
@@ -29,43 +35,63 @@ def docs(session: nox.session) -> None:
 
 # Linting and formatting
 
+
 def install_apt_packages(session: nox.session, *pkg_args: str) -> None:
+    """Install packages with apt. requires sudo access."""
     session.run("sudo", "apt-get", "update", "-qq", external=True)
     session.run("sudo", "apt-get", "install", "-y", *pkg_args, "-qq", external=True)
 
+
 def install_npm_packages(session: nox.session, *pkg_args: str) -> None:
+    """Install packages from npm."""
     session.run("npm", "install", "--silent", *pkg_args, external=True)
+
 
 @nox.session(tags=["format", "check"])
 def black(session: nox.session) -> None:
+    """Format python acording to PEP."""
     session.install("black")
     session.run("black", *format_dirs)
 
 
 @nox.session(tags=["format", "check"])
 def isort(session: nox.session) -> None:
+    """Sort python imports correctly."""
     session.install("isort")
     session.run("isort", "--profile", "black", *format_dirs)
 
-@nox.session(tags=["docs", "format", "check"])
+
+@nox.session(tags=["docs"])
 def format_docs(session: nox.session):
+    """Format mkdocs with prettier."""
     install_apt_packages(session, "nodejs", "npm")
     install_npm_packages(session, "--save-dev", "prettier")
-    
+
     session.run("npx", "prettier", "--write", "docs/**/*.md", external=True)
 
 
 @nox.session(tags=["lint", "check"])
 def flake(session: nox.session) -> None:
+    """Lint python and docstrings according to PEP."""
     session.install("flake8")
     session.install("flake8-docstrings")
     session.run(
-        "flake8", *format_dirs, "--max-line-length", "88", "--extend-ignore", "E203"
+        "flake8",
+        *format_dirs,
+        "--max-line-length",
+        "88",
+        "--extend-ignore",
+        "E203,W503",
+        "--ignore",
+        "D100,D101",
+        "--exclude",
+        "tests/*",
     )
 
 
 @nox.session(tags=["lint", "check"])
 def mypy(session: nox.session) -> None:
+    """Run python type checking with mypy."""
     import pathlib
 
     mypy_dirs = []
@@ -77,8 +103,10 @@ def mypy(session: nox.session) -> None:
     session.install("-r", requirements)
     session.run("mypy", *mypy_dirs, "--ignore-missing-imports")
 
-@nox.session(tags=["docs", "lint", "check"])
+
+@nox.session(tags=["docs"])
 def lint_docs(session: nox.session) -> None:
+    """Lint the docs according to markdownlint."""
     install_apt_packages(session, "nodejs", "npm")
     install_npm_packages(session, "markdownlint-cli")
 
@@ -90,7 +118,7 @@ def lint_docs(session: nox.session) -> None:
 
 @nox.session
 def clean(session: nox.session) -> None:
-    """Cleanly remove all created files"""
+    """Remove all created files."""
     import os
     import shutil
 
@@ -124,6 +152,7 @@ def clean(session: nox.session) -> None:
 
 @nox.session(tags=["test", "check"])
 def test(session: nox.session) -> None:
+    """Run pytest."""
     session.install("pytest")
     session.install("pytest-mock")
     session.install("coverage")

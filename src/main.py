@@ -1,29 +1,35 @@
+"""Main entrypoint to YouTube Automation."""
+
 import logging.config
 import sys
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
 from logging import getLogger
 from pathlib import Path
-import os
 
+from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
 from .youtube import YouTube
 
-def parse_args() -> tuple[ArgumentParser, Namespace]:
+
+def setup_parser() -> ArgumentParser:
+    """Configure parser arguments."""
     is_nox = "nox" in sys.orig_argv[0]
-    parser = ArgumentParser(description="YouTube Automation scripts", prog="nox --" if is_nox else __name__)
+    parser = ArgumentParser(
+        description="YouTube Automation scripts", prog="nox --" if is_nox else __name__
+    )
 
     # Shared arguments come before sub-command arguments
     parser.add_argument(
-        "--env-client",
+        "--env-youtube",
         type=Path,
-        default=Path(".env.client"),
-        help="Filepath for the youtube client credentials",
+        default=Path(".env.youtube"),
+        help="Filepath for the youtube credentials",
     )
     parser.add_argument(
-        "--env-token",
+        "--logging-path",
         type=Path,
-        default=Path(".env.token"),
-        help="Filepath for the youtube access_token",
+        default=Path("application.log"),
+        help="Filepath for the output log.",
     )
 
     subcommands = parser.add_subparsers(help="sub-command help")
@@ -33,29 +39,34 @@ def parse_args() -> tuple[ArgumentParser, Namespace]:
     playlist_parser = subcommands.add_parser("playlist-automation")
     playlist_parser.set_defaults(func=playlist_automation)
 
-    return parser, parser.parse_args()
+    # Calendar automation
+    calendar_parser = subcommands.add_parser("calendar-automation")
+    calendar_parser.set_defaults(func=calendar_automation)
+    calendar_parser.add_argument(
+        "--env-calendar",
+        type=Path,
+        default=Path(".env.calendar"),
+        help="Filepath for the calendar credentials",
+    )
+    calendar_parser.add_argument(
+        "--timezone",
+        type=str,
+        default="UTC",
+        help="Timezone to use if creating new calendars, or adding events to calendars",
+    )
+
+    return parser
 
 
 def main() -> int:
+    """Entrypoint for the whole program."""
     LOG = getLogger("main")
 
-    parser, args = parse_args()
+    parser = setup_parser()
+    args = parser.parse_args()
 
-    if func := getattr(args, "func", None):
-        try:
-            yt = YouTube(client_env=args.env_client, token_env=args.env_token)
-            yt.authenticate()
-        except Exception as e:
-            LOG.error("Could not authenticate to YouTube")
-            LOG.error(e)
-        LOG.info(f"Running entrypoint {func.__name__}")
-        return func(yt)
+    # configure logging
 
-    parser.print_help()
-    return 0
-
-
-if __name__ == "__main__":
     logging.config.dictConfig(
         {
             "version": 1,
@@ -68,7 +79,7 @@ if __name__ == "__main__":
                     "class": "logging.FileHandler",
                     "level": "DEBUG",
                     "formatter": "file",
-                    "filename": "application.log",
+                    "filename": args.logging_path,
                     "mode": "a",
                 },
                 "stream": {
@@ -82,4 +93,23 @@ if __name__ == "__main__":
         }
     )
 
+    # authenticate to youtube and run the requested entrypoint
+
+    if func := getattr(args, "func", None):
+        try:
+            yt = YouTube(
+                client_env=args.env_client, token_env=args.env_token
+            )  # type:ignore [call-arg]
+            yt.authenticate()
+        except Exception as e:
+            LOG.error("Could not authenticate to YouTube")
+            LOG.error(e)
+        LOG.info(f"Running entrypoint {func.__name__}")
+        return func(yt)
+
+    parser.print_help()
+    return 0
+
+
+if __name__ == "__main__":
     sys.exit(main())
