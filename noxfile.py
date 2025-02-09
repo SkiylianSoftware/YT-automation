@@ -19,9 +19,22 @@ def dev(session: nox.session) -> None:
     session.install("-r", requirements)
     session.run("python3")
 
+@nox.session
+def docs(session: nox.session) -> None:
+    session.install("mkdocs")
+    session.install("mkdocs-dracula-theme")
+    session.run("mkdocs", "build", "-f", "docs/mkdocs.yml")
+    session.run("mkdocs", "serve", "-f", "docs/mkdocs.yml")
+
 
 # Linting and formatting
 
+def install_apt_packages(session: nox.session, *pkg_args: str) -> None:
+    session.run("sudo", "apt-get", "update", "-qq", external=True)
+    session.run("sudo", "apt-get", "install", "-y", *pkg_args, "-qq", external=True)
+
+def install_npm_packages(session: nox.session, *pkg_args: str) -> None:
+    session.run("npm", "install", "--silent", *pkg_args, external=True)
 
 @nox.session(tags=["format", "check"])
 def black(session: nox.session) -> None:
@@ -34,17 +47,25 @@ def isort(session: nox.session) -> None:
     session.install("isort")
     session.run("isort", "--profile", "black", *format_dirs)
 
+@nox.session(tags=["docs", "format", "check"])
+def format_docs(session: nox.session):
+    install_apt_packages(session, "nodejs", "npm")
+    install_npm_packages(session, "--save-dev", "prettier")
+    
+    session.run("npx", "prettier", "--write", "docs/**/*.md", external=True)
+
 
 @nox.session(tags=["lint", "check"])
 def flake(session: nox.session) -> None:
     session.install("flake8")
+    session.install("flake8-docstrings")
     session.run(
         "flake8", *format_dirs, "--max-line-length", "88", "--extend-ignore", "E203"
     )
 
 
 @nox.session(tags=["lint", "check"])
-def mymy(session: nox.session) -> None:
+def mypy(session: nox.session) -> None:
     import pathlib
 
     mypy_dirs = []
@@ -55,6 +76,13 @@ def mymy(session: nox.session) -> None:
     session.install("mypy")
     session.install("-r", requirements)
     session.run("mypy", *mypy_dirs, "--ignore-missing-imports")
+
+@nox.session(tags=["docs", "lint", "check"])
+def lint_docs(session: nox.session) -> None:
+    install_apt_packages(session, "nodejs", "npm")
+    install_npm_packages(session, "markdownlint-cli")
+
+    session.run("npx", "markdownlint", "docs/**/*.md", external=True)
 
 
 # Cleanup
@@ -82,9 +110,13 @@ def clean(session: nox.session) -> None:
     delete(".mypy_cache")
     delete(".pytest_cache")
     delete(".nox")
+    delete("node_modules")
+    delete("site")
 
     delete_file(".coverage")
     delete_file("application.log")
+    delete_file("package.json")
+    delete_file("package-lock.json")
 
 
 # Test execution
