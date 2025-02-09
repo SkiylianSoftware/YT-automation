@@ -8,7 +8,7 @@ from logging import getLogger
 
 from pyyoutube import Playlist, Video
 
-from .youtube import YouTube
+from .API.youtube import YouTube
 
 LOG = getLogger("playlist-automation")
 

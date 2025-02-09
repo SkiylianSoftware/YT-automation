@@ -8,7 +8,8 @@ from pathlib import Path
 
 from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
-from .youtube import YouTube
+from .API.youtube import YouTube
+from .video_upload import upload_video
 
 
 def setup_parser() -> ArgumentParser:
@@ -55,6 +56,17 @@ def setup_parser() -> ArgumentParser:
         help="Timezone to use if creating new calendars, or adding events to calendars",
     )
 
+    # Video upload
+    upload_parser = subcommands.add_parser("upload-ui")
+    upload_parser.set_defaults(func=upload_video)
+    upload_parser.add_argument(
+        "--db-path",
+        type=Path,
+        default=Path("videos.db"),
+        help="Filepath for the local DB store."
+    )
+
+
     return parser
 
 
@@ -98,14 +110,14 @@ def main() -> int:
     if func := getattr(args, "func", None):
         try:
             yt = YouTube(
-                client_env=args.env_client, token_env=args.env_token
-            )  # type:ignore [call-arg]
+                youtube_env=args.env_youtube
+            )
             yt.authenticate()
         except Exception as e:
             LOG.error("Could not authenticate to YouTube")
             LOG.error(e)
         LOG.info(f"Running entrypoint {func.__name__}")
-        return func(yt)
+        return func(args, yt)
 
     parser.print_help()
     return 0

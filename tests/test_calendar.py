@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.calendar import CalendarAPI
+from src.API.calendar import CalendarAPI
 
 
 @pytest.fixture

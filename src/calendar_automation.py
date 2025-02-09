@@ -6,8 +6,8 @@ from logging import getLogger
 
 from isodate import parse_datetime, parse_duration
 
-from .calendar import Calendar, CalendarAPI, Event
-from .youtube import Video, YouTube
+from .API.calendar import Calendar, CalendarAPI, Event
+from .API.youtube import Video, YouTube
 
 LOG = getLogger("calendar-automation")
 

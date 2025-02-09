@@ -4,3 +4,4 @@ google-auth-oauthlib
 isodate
 python-youtube
 python-dotenv
+sqlalchemy
