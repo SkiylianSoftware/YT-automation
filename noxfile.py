@@ -44,7 +44,7 @@ def flake(session: nox.session) -> None:
 
 
 @nox.session(tags=["lint", "check"])
-def mymy(session: nox.session) -> None:
+def mypy(session: nox.session) -> None:
     import pathlib
 
     mypy_dirs = []

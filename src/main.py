@@ -21,6 +21,12 @@ def main() -> int:
         default=Path(".env.youtube"),
         help="Filepath for the youtube credentials",
     )
+    parser.add_argument(
+        "--logging-path",
+        type=Path,
+        default=Path("application.log"),
+        help="Filepath for the output log.",
+    )
 
     subcommands = parser.add_subparsers(help="sub-command help")
 
@@ -45,8 +51,36 @@ def main() -> int:
         help="Timezone to use if creating new calendars, or adding events to calendars",
     )
 
-    # Parse arguments and execute
+    # Parse arguments and Configure logging
     args = parser.parse_args()
+    logging.config.dictConfig(
+        {
+            "version": 1,
+            "formatters": {
+                "default": {"format": "%(name)s: %(message)s"},
+                "file": {"format": "[%(asctime)s] %(name)s: %(message)s"},
+            },
+            "handlers": {
+                "file": {
+                    "class": "logging.FileHandler",
+                    "level": "DEBUG",
+                    "formatter": "file",
+                    "filename": args.logging_path,
+                    "mode": "a",
+                },
+                "stream": {
+                    "class": "logging.StreamHandler",
+                    "level": "INFO",
+                    "formatter": "default",
+                    "stream": "ext://sys.stdout",
+                },
+            },
+            "root": {"level": "DEBUG", "handlers": ["file", "stream"]},
+        }
+    )
+
+    # authenticate to youtube and run the requested entrypoint
+
     if func := getattr(args, "func", None):
         try:
             yt = YouTube(youtube_env=args.env_youtube)
@@ -64,30 +98,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    logging.config.dictConfig(
-        {
-            "version": 1,
-            "formatters": {
-                "default": {"format": "%(name)s: %(message)s"},
-                "file": {"format": "[%(asctime)s] %(name)s: %(message)s"},
-            },
-            "handlers": {
-                "file": {
-                    "class": "logging.FileHandler",
-                    "level": "DEBUG",
-                    "formatter": "file",
-                    "filename": "application.log",
-                    "mode": "a",
-                },
-                "stream": {
-                    "class": "logging.StreamHandler",
-                    "level": "INFO",
-                    "formatter": "default",
-                    "stream": "ext://sys.stdout",
-                },
-            },
-            "root": {"level": "DEBUG", "handlers": ["file", "stream"]},
-        }
-    )
-
     sys.exit(main())

@@ -19,8 +19,14 @@ VIDEO_REGEX = re.compile(
 def game_to_short(game_name: str) -> str:
     """Kerbal Space Program -> KSP"""
     """KSP -> KSP"""
+    """Minecraft -> MINECRAFT"""
+    # single word is the game
+    if " " not in game_name:
+        return game_name.upper()
+    # Full caps is an acronym already
     if all(s.isupper() for s in game_name):
         return game_name
+    # Otherwise, return only the caps
     return "".join(word[0].upper() for word in game_name.split())
 
 
