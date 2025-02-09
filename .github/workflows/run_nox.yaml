@@ -28,7 +28,13 @@ jobs:
         pip install nox
     - name: Lint
       run: |
-        nox -t lint
+        nox -s flake
+    - name: Typing
+      run: |
+        nox -s mypy
+    - name: Docs linting
+      run: |
+        nox -s lint_docs
     - name: Test Suite
       run: |
         nox -t test
