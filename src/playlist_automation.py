@@ -72,6 +72,7 @@ def find_videos_not_in_playlists(
     """
     Returns: [(video, playlist_for_video), ...]
     """
+    log = LOG.getChild("playlist-searching")
     missing: list[tuple[Video, Playlist]] = []
     for game, serieses in videos.items():
         for series, vids in serieses.items():
@@ -80,6 +81,7 @@ def find_videos_not_in_playlists(
                 pl_ids = [pl_vid.id for pl_vid in pl_vids]
                 for vid in vids:
                     if vid.id not in pl_ids:
+                        log.debug(f"video {vid} not in {pl}")
                         missing.append((vid, pl))
 
     return missing
@@ -88,50 +90,53 @@ def find_videos_not_in_playlists(
 def add_video_to_playlists(
     yt: YouTube, missing_vids: list[tuple[Video, Playlist]]
 ) -> None:
+    log = LOG.getChild("playlist-addition")
     for video, playlist in missing_vids:
         try:
             yt.add_to_playlist(playlist, video)
-            LOG.debug(
+            log.debug(
                 f"Successfully added {video.snippet.title} to {playlist.snippet.title}!"
             )
         except Exception as e:
-            LOG.error(
+            log.error(
                 f"Failed to add {video.snippet.title} to {playlist.snippet.title}"
             )
-            LOG.error(e)
+            log.error(e)
 
 
 def playlist_automation(args: Namespace, yt: YouTube) -> int:
+    log = LOG.getChild("playlists")
+
     # Fetch playlists
     channel_playlists = yt.playlists
     if not channel_playlists:
-        LOG.info(f"No playlists found for {yt.me}")
+        log.error(f"No playlists found for {yt.me}")
         return 1
-    LOG.debug(f"Found playlists: {yt.show(channel_playlists)}")
+    log.debug(f"Found playlists: {yt.show(channel_playlists)}")
 
     # Create playlist mapping
     playlists = playlist_mapping(channel_playlists)
-    LOG.debug(f"Playlist mapping: {playlists}")
+    log.debug(f"Playlist mapping: {playlists}")
 
     # Fetch uploads
     channel_videos = yt.public_videos
     if not channel_videos:
-        LOG.warning(f"No videos found for {yt.me}")
+        log.error(f"No videos found for {yt.me}")
         return 1
-    LOG.debug(f"Found videos: {yt.show(channel_videos)}")
+    log.debug(f"Found videos: {yt.show(channel_videos)}")
 
     # create video mapping
     videos = video_mapping(channel_videos)
-    LOG.debug(f"Video mapping: {videos}")
+    log.debug(f"Video mapping: {videos}")
 
     # check all videos are in the correct playlists
     missing_from_playlist = find_videos_not_in_playlists(yt, playlists, videos)
 
     # add video to playlist if missing
     if missing_from_playlist:
-        LOG.info(f"{len(missing_from_playlist)} videos missing from playlist.")
+        log.info(f"{len(missing_from_playlist)} videos missing from playlist.")
         add_video_to_playlists(yt, missing_from_playlist)
     else:
-        LOG.info("No videos are missing from their respective playlists!")
+        log.info("No videos are missing from their respective playlists!")
 
     return 0

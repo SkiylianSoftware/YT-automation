@@ -19,9 +19,9 @@ T = TypeVar("T")
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 
-
 def clean_dict(D: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in D.items() if v is not None}
+
 
 @dataclass
 class CalendarAPI:
@@ -130,13 +130,9 @@ class CalendarAPI:
             params = {"calendarId": calendar.id, "pageToken": page_token}
             if token := calendar.synch_token:
                 params["synchToken"] = token
-            
+
             try:
-                events = (
-                    self.service.events()
-                    .list(**params)
-                    .execute()
-                )
+                events = self.service.events().list(**params).execute()
                 for event in events.get("items", []):
                     evt = Event.from_api(event)
                     self.logger.debug(f"found event: {evt}")
@@ -153,14 +149,13 @@ class CalendarAPI:
                     self.logger.warning("synch token expired, fetching events again")
                     return self._fetch_events_(calendar)
                 raise e
-        
+
         return _events
-    
+
     def _delete_event_(self, calendar: Calendar, event: Event) -> None:
         self.logger.debug(f"Deleting event {event} from calendar {calendar}")
         self.service.events().delete(calendarId=calendar.id, eventId=event.id).execute()
 
-    
     def _synch_events_(self, calendar: Calendar) -> None:
         fetched_events = self._fetch_events_(calendar)
         event_cache = calendar._events_cache_
@@ -170,11 +165,17 @@ class CalendarAPI:
             for fetched in fetched_events:
                 if fetched.id == event.id:
                     self.logger.debug(f"event {event} already in calendar, updating")
-                    self.service.events().update(calendarId=calendar.id, eventId=event.id, body=event.to_dict()).execute()
+                    self.service.events().update(
+                        calendarId=calendar.id, eventId=event.id, body=event.to_dict()
+                    ).execute()
                     break
             else:
                 self.logger.debug(f"event {event} new to calendar, creating")
-                created_event = self.service.events().insert(calendarId=calendar.id, body=event.to_dict()).execute()
+                created_event = (
+                    self.service.events()
+                    .insert(calendarId=calendar.id, body=event.to_dict())
+                    .execute()
+                )
                 calendar._events_cache_[i] = created_event
 
         # pull events from api to cache
@@ -215,7 +216,7 @@ class Event:
             start=datetime.fromisoformat(data["start"]["dateTime"]),
             end=datetime.fromisoformat(data["end"]["dateTime"]),
         )
-    
+
     def __str__(self) -> str:
         return f"Event: {self.summary} at {self.start}"
 
@@ -235,7 +236,7 @@ class Calendar:
 
     api: Optional[CalendarAPI] = None
     synch_token: Optional[str] = None
-    _events_cache_: Optional[list[Event]] = None
+    _events_cache_: list[Event] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -261,40 +262,48 @@ class Calendar:
             access_role=data.get("access_role", "owner"),
             hidden=data.get("hidden", False),
         )
-    
+
     def __str__(self) -> str:
         return f"Calendar: {self.summary}"
-    
-    def checkapi(self) -> None:
-        if not self.api:
-            raise RuntimeError(
-                "Cannot search for events on calendar without API object"
-            )
+
+    def ensure_events_(self, evts: list[Event] | list[dict[str, Any]]) -> list[Event]:
+        return [evt if isinstance(evt, Event) else Event.from_api(evt) for evt in evts]
 
     @property
     def events(self) -> list[Event]:
         if self._events_cache_:
-            return self._events_cache_
-        self.checkapi()
-        self._events_cache_ = self.api._fetch_events_(self)
-        return self._events_cache_
+            return self.ensure_events_(self._events_cache_)
+        if api := self.api:
+            self._events_cache_ = api._fetch_events_(self)
+            return self.ensure_events_(self._events_cache_)
+        raise RuntimeError("Cannot search for events on calendar without API object")
 
     def synch(self) -> None:
         """synchhronise local state with API state"""
-        self.checkapi()
-        self.api._synch_events_(self)
+        if api := self.api:
+            api._synch_events_(self)
+        else:
+            raise RuntimeError("Cannot synch to a calendar without API object")
 
     def update_event(self, old_event: Event, new_event: Event) -> None:
         for i, event in enumerate(self._events_cache_):
             if event.id == old_event.id:
-                new_detail = clean_dict(old_event.to_dict()) | clean_dict(new_event.to_dict())
+                new_detail = clean_dict(old_event.to_dict()) | clean_dict(
+                    new_event.to_dict()
+                )
                 self._events_cache_[i] = Event.from_api(new_detail)
                 return
-        self.api.logger.warning(f"Could not find event {old_event} to update!")
-    
+        if api := self.api:
+            api.logger.warning(f"Could not find event {old_event} to update!")
+        else:
+            raise RuntimeError("Cannot update events on calendar without API object")
+
     def create_event(self, new_event: Event) -> None:
         self._events_cache_.append(new_event)
-    
+
     def delete_event(self, event: Event) -> None:
-        self.api._delete_event_(self, event)
-        self._events_cache_.remove(event)
+        if api := self.api:
+            api._delete_event_(self, event)
+            self._events_cache_.remove(event)
+        else:
+            raise RuntimeError("Cannot delete events on calendar without API object")

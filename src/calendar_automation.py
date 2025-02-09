@@ -1,21 +1,27 @@
+import re
 from argparse import Namespace
 from logging import getLogger
 
-from .calendar import CalendarAPI, Event, Calendar
+from isodate import parse_datetime, parse_duration
+
+from .calendar import Calendar, CalendarAPI, Event
 from .youtube import Video, YouTube
-from isodate import parse_duration, parse_datetime
-import re
 
 LOG = getLogger("calendar-automation")
 
 EVT_VID_ID = re.compile(r"ID: (?P<video_id>\S+)")
 
+
 def fetch_video_event(video: Video, events: list[Event]) -> Event | None:
     for event in events:
-        if search := EVT_VID_ID.search(event.description):
-            if search.group(1) == video.id:
-                return event
+        if (
+            (desc := event.description)
+            and (search := EVT_VID_ID.search(desc))
+            and (search.group(1) == video.id)
+        ):
+            return event
     return None
+
 
 def add_videos_to_calendar(videos: list[Video], calendar: Calendar) -> None:
     """Add videos to calendar, or update the calendar event details if different"""
@@ -34,23 +40,25 @@ def add_videos_to_calendar(videos: list[Video], calendar: Calendar) -> None:
             summary=video.snippet.title,
             description=f"ID: {video.id}\nDescription: {video.snippet.description}",
             start=video_publish,
-            end=video_publish+video_duration
+            end=video_publish + video_duration,
         )
 
         if found_event := fetch_video_event(video, events=events):
-            log.debug(f"video {video.snippet.title} already in calendar {found_event.summary}, updating")
+            log.debug(
+                f"video {video.snippet.title} already in calendar "
+                f"{found_event.summary}, updating"
+            )
             calendar.update_event(found_event, video_event)
 
         else:
             log.debug(f"video {video.snippet.title} not in calendar, creating")
             calendar.create_event(video_event)
 
-        
-    
     log.debug(f"All {len(videos)} added to calendar {calendar.summary}, synching")
     calendar.synch()
 
-def remove_videos_from_calendar(videos: list[Video], calendar: Calendar)-> None:
+
+def remove_videos_from_calendar(videos: list[Video], calendar: Calendar) -> None:
     """Remove videos from a calendar if they exist"""
 
     log = LOG.getChild("calendar-delete")
@@ -59,7 +67,10 @@ def remove_videos_from_calendar(videos: list[Video], calendar: Calendar)-> None:
 
     for video in videos:
         if found_event := fetch_video_event(video, events):
-            log.debug(f"Video {video.snippet.title} in calendar {calendar.summary} when it should be deleted")
+            log.debug(
+                f"Video {video.snippet.title} in calendar "
+                f"{calendar.summary} when it should be deleted"
+            )
             deleted_count += 1
             calendar.delete_event(found_event)
 
@@ -67,6 +78,7 @@ def remove_videos_from_calendar(videos: list[Video], calendar: Calendar)-> None:
         log.info(f"{deleted_count} Videos were removed from {calendar.summary}")
     else:
         log.info(f"No videos removed from {calendar.summary}")
+
 
 def purge_nonexistent_videos(videos: list[Video], calendar: Calendar) -> None:
     """Remove video events for videos that no longer exist."""
@@ -76,9 +88,9 @@ def purge_nonexistent_videos(videos: list[Video], calendar: Calendar) -> None:
     deleted_count = 0
 
     for event in events:
-        if search := EVT_VID_ID.search(event.description):
+        if (desc := event.description) and (search := EVT_VID_ID.search(desc)):
             video_id = search.group("video_id").strip()
-            
+
             for video in videos:
                 if video_id == video.id:
                     break
@@ -88,20 +100,23 @@ def purge_nonexistent_videos(videos: list[Video], calendar: Calendar) -> None:
                 calendar.delete_event(event)
 
     if deleted_count:
-        log.info(f"{deleted_count} non-existent videos were removed from {calendar.summary}")
+        log.info(
+            f"{deleted_count} non-existent videos were removed from {calendar.summary}"
+        )
     else:
         log.info(f"No videos removed from {calendar.summary}")
 
 
 def calendar_automation(args: Namespace, yt: YouTube) -> int:
+    log = LOG.getChild("calendar")
 
     # Authenticate to Google Calendar
     try:
         cal = CalendarAPI(calendar_env=args.env_calendar, timezone=args.timezone)
         cal.authenticate()
     except Exception as e:
-        LOG.error("Could not authenticate to Google calendar")
-        LOG.error(e)
+        log.error("Could not authenticate to Google calendar")
+        log.error(e)
         return 1
 
     # Check the calendars exist
@@ -120,22 +135,22 @@ def calendar_automation(args: Namespace, yt: YouTube) -> int:
             # colour=CalendarColour.lavendar,
         )
     )
-    LOG.debug(
-        f"Fetched or created the public ({publicCalendar}) and private ({privateCalendar}) calendars."
+    log.debug(
+        f"Fetched or created the public ({publicCalendar}) "
+        f"and private ({privateCalendar}) calendars."
     )
 
     # Fetch all the public videos and add to the public calendar
 
     public_videos = yt.public_videos
-    LOG.debug(f"Found {len(public_videos)} public videos: {public_videos}")
+    log.debug(f"Found {len(public_videos)} public videos: {public_videos}")
 
     if public_videos:
         add_videos_to_calendar(public_videos, publicCalendar)
 
     # Fetch all the private videos and add to the private calendar
     scheduled_videos = yt.scheduled_videos
-    LOG.debug(f"found {len(scheduled_videos)} scheduled videos")
-    
+    log.debug(f"found {len(scheduled_videos)} scheduled videos")
 
     if scheduled_videos:
         add_videos_to_calendar(scheduled_videos, privateCalendar)
@@ -147,6 +162,6 @@ def calendar_automation(args: Namespace, yt: YouTube) -> int:
     purge_nonexistent_videos(yt.videos, privateCalendar)
     purge_nonexistent_videos(yt.videos, publicCalendar)
 
-    LOG.info("All videos synched to calendars")
+    log.info("All videos synched to calendars")
 
     return 0
