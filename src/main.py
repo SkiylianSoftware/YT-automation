@@ -1,18 +1,17 @@
 import logging.config
 import sys
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from logging import getLogger
 from pathlib import Path
+import os
 
 from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
 from .youtube import YouTube
 
-
-def main() -> int:
-    LOG = getLogger("main")
-
-    parser = ArgumentParser(description="YouTube Automation scripts")
+def parse_args() -> tuple[ArgumentParser, Namespace]:
+    is_nox = "nox" in sys.orig_argv[0]
+    parser = ArgumentParser(description="YouTube Automation scripts", prog="nox --" if is_nox else __name__)
 
     # Shared arguments come before sub-command arguments
     parser.add_argument(
@@ -53,6 +52,29 @@ def main() -> int:
 
     # Parse arguments and Configure logging
     args = parser.parse_args()
+    return parser, parser.parse_args()
+
+
+def main() -> int:
+    LOG = getLogger("main")
+
+    parser, args = parse_args()
+
+    if func := getattr(args, "func", None):
+        try:
+            yt = YouTube(client_env=args.env_client, token_env=args.env_token)
+            yt.authenticate()
+        except Exception as e:
+            LOG.error("Could not authenticate to YouTube")
+            LOG.error(e)
+        LOG.info(f"Running entrypoint {func.__name__}")
+        return func(yt)
+
+    parser.print_help()
+    return 0
+
+
+if __name__ == "__main__":
     logging.config.dictConfig(
         {
             "version": 1,

@@ -1,0 +1,23 @@
+site_name: YouTube Automation
+site_description: Automation for tedious YouTube actions
+site_url: https://skiyliansoftware.github.io/YT-automation/
+repo_url: https://github.com/SkiylianSoftware/YT-automation
+
+docs_dir: docs
+site_dir: ../site
+
+nav:
+  - Home: index.md
+  # - Getting Started: nav/getting-started.md
+  # - Settings:
+  #   - nav/settings/custom-highlight.md
+  # - Development:
+  #   - nav/development/development-guide.md
+  #   - nav/development/release-notes.md
+
+theme:
+    name: dracula
+
+extra:
+  footer: |
+    Built with the [Dracula](https://github.com/dracula/mkdocs) theme for [MkDocs](https://mkdocs.org/)
