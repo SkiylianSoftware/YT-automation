@@ -16,4 +16,5 @@ Run the entrypoint
 nox
 ```
 
-By default, this will serve the help page, select the script to run according to the instructions provided
+By default, this will serve the help page, select the script to run according
+to the instructions provided.
