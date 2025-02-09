@@ -23,6 +23,13 @@ def dev(session: nox.session) -> None:
     session.install("-r", requirements)
     session.run("python3")
 
+@nox.session
+def docs(session: nox.session) -> None:
+    session.install("mkdocs")
+    session.install("mkdocs-dracula-theme")
+    session.run("mkdocs", "build", "-f", "docs/mkdocs.yml")
+    session.run("mkdocs", "serve", "-f", "docs/mkdocs.yml")
+
 
 @nox.session
 def docs(session: nox.session) -> None:
@@ -35,6 +42,12 @@ def docs(session: nox.session) -> None:
 
 # Linting and formatting
 
+def install_apt_packages(session: nox.session, *pkg_args: str) -> None:
+    session.run("sudo", "apt-get", "update", "-qq", external=True)
+    session.run("sudo", "apt-get", "install", "-y", *pkg_args, "-qq", external=True)
+
+def install_npm_packages(session: nox.session, *pkg_args: str) -> None:
+    session.run("npm", "install", "--silent", *pkg_args, external=True)
 
 def install_apt_packages(session: nox.session, *pkg_args: str) -> None:
     """Install apt packages (sudo pswd required)."""
@@ -59,6 +72,13 @@ def isort(session: nox.session) -> None:
     """Sort python imports correctly."""
     session.install("isort")
     session.run("isort", "--profile", "black", *format_dirs)
+
+@nox.session(tags=["docs", "format", "check"])
+def format_docs(session: nox.session):
+    install_apt_packages(session, "nodejs", "npm")
+    install_npm_packages(session, "--save-dev", "prettier")
+    
+    session.run("npx", "prettier", "--write", "docs/**/*.md", external=True)
 
 
 @nox.session(tags=["docs"])
@@ -102,6 +122,13 @@ def mypy(session: nox.session) -> None:
     session.install("mypy")
     session.install("-r", requirements)
     session.run("mypy", *mypy_dirs, "--ignore-missing-imports")
+
+@nox.session(tags=["docs", "lint", "check"])
+def lint_docs(session: nox.session) -> None:
+    install_apt_packages(session, "nodejs", "npm")
+    install_npm_packages(session, "markdownlint-cli")
+
+    session.run("npx", "markdownlint", "docs/**/*.md", external=True)
 
 
 @nox.session(tags=["docs"])

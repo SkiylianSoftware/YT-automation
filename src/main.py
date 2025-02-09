@@ -2,9 +2,10 @@
 
 import logging.config
 import sys
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from logging import getLogger
 from pathlib import Path
+import os
 
 from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
