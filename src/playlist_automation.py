@@ -1,3 +1,5 @@
+"""Move videos into corresponding YouTube playlists."""
+
 from __future__ import annotations
 
 import re
@@ -17,9 +19,14 @@ VIDEO_REGEX = re.compile(
 
 
 def game_to_short(game_name: str) -> str:
-    """Kerbal Space Program -> KSP"""
-    """KSP -> KSP"""
-    """Minecraft -> MINECRAFT"""
+    """
+    Convert a game name to the acronym.
+
+    ie:
+    - Kerbal Space Program  -> KSP.
+    - KSP                   -> KSP.
+    - Minecraft             -> MINECRAFT.
+    """
     # single word is the game
     if " " not in game_name:
         return game_name.upper()
@@ -32,6 +39,8 @@ def game_to_short(game_name: str) -> str:
 
 def playlist_mapping(playlists: list[Playlist]) -> dict[str, dict[str, Playlist]]:
     """
+    Generate a mapping from Playlists to playlist meta-details.
+
     Returns: {GAME_ACRONYM: [Series_for_game, ...], ...}
     """
     mapping: dict[str, dict[str, Playlist]] = {}
@@ -51,6 +60,8 @@ def playlist_mapping(playlists: list[Playlist]) -> dict[str, dict[str, Playlist]
 
 def video_mapping(videos: list[Video]) -> dict[str, dict[str, list[Video]]]:
     """
+    Generate a mapping from Videos to video meta-details.
+
     Returns: {GAME_ACRONYM: {Series_for_game: [videos_for_series, ...], ...}, ...}
     """
     mapping: dict[str, dict[str, list[Video]]] = {}
@@ -75,9 +86,7 @@ def find_videos_not_in_playlists(
     playlists: dict[str, dict[str, Playlist]],
     videos: dict[str, dict[str, list[Video]]],
 ) -> list[tuple[Video, Playlist]]:
-    """
-    Returns: [(video, playlist_for_video), ...]
-    """
+    """Return all the videos not found in `playlist`."""
     log = LOG.getChild("playlist-searching")
     missing: list[tuple[Video, Playlist]] = []
     for game, serieses in videos.items():
@@ -96,6 +105,7 @@ def find_videos_not_in_playlists(
 def add_video_to_playlists(
     yt: YouTube, missing_vids: list[tuple[Video, Playlist]]
 ) -> None:
+    """For each [video,playlist] tuple, add the video to the playlist."""
     log = LOG.getChild("playlist-addition")
     for video, playlist in missing_vids:
         try:
@@ -111,6 +121,7 @@ def add_video_to_playlists(
 
 
 def playlist_automation(args: Namespace, yt: YouTube) -> int:
+    """Entrypoint for playlist automation."""
     log = LOG.getChild("playlists")
 
     # Fetch playlists

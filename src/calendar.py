@@ -20,12 +20,13 @@ SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 
 def clean_dict(D: dict[str, Any]) -> dict[str, Any]:
+    """Return a dictionary object without `None` values."""
     return {k: v for k, v in D.items() if v is not None}
 
 
 @dataclass
 class CalendarAPI:
-    """API Interaction and Authentication"""
+    """API Interaction and Authentication."""
 
     calendar_env: Path
     timezone: str
@@ -34,13 +35,16 @@ class CalendarAPI:
 
     @property
     def logger(self) -> Logger:
+        """Logger object for CalendarAPI."""
         return getLogger("calendar-api")
 
-    def _write_creds_(self, credentials: Credentials) -> None:
+    def __write_creds__(self, credentials: Credentials) -> None:
+        """Write credentials to the persistent storage location."""
         self.calendar_env.write_text(credentials.to_json())
         self.logger.debug(f"Wrote credentials to {self.calendar_env}")
 
     def authenticate(self) -> None:
+        """Authenticate to Google calendar."""
         if not self.calendar_env.exists():
             raise FileExistsError("Calendar environment file does not exist!")
 
@@ -71,13 +75,14 @@ class CalendarAPI:
         elif not creds.valid:
             raise Exception("OAuth credentials invalid!")
 
-        self._write_creds_(creds)
+        self.__write_creds__(creds)
 
         self.service = build("calendar", "v3", credentials=creds)
 
     # Calendar operations
 
     def fetch_calendars(self) -> list[Calendar]:
+        """Fetch all calendars for a google account."""
         self.logger.debug("Returning all calendars")
         _calendars = []
         page_token = None
@@ -96,6 +101,7 @@ class CalendarAPI:
         return _calendars
 
     def fetch_calendar(self, name: str) -> Calendar | None:
+        """Fetch a specific calendar with name=`name` for a google account."""
         self.logger.debug(f"Searching for calendar {name}")
         for calendar in self.fetch_calendars():
             if name in [calendar.summary, calendar.id]:
@@ -105,6 +111,7 @@ class CalendarAPI:
         return None
 
     def create_calendar(self, cal: dict[str, Any] | Calendar) -> Calendar:
+        """Create a calendar on the google account."""
         calendar = clean_dict(cal if isinstance(cal, dict) else cal.to_dict())
 
         if existing := self.fetch_calendar(calendar["summary"]):
@@ -122,7 +129,8 @@ class CalendarAPI:
 
     # Events operations
 
-    def _fetch_events_(self, calendar: Calendar) -> list[Event]:
+    def __fetch_events__(self, calendar: Calendar) -> list[Event]:
+        """Fetch all the events on a `calendar`."""
         self.logger.debug(f"Returning all events for {calendar}")
         _events: list[Event] = []
         page_token = None
@@ -147,17 +155,19 @@ class CalendarAPI:
                 if e.resp.status == 410:
                     calendar.synch_token = None
                     self.logger.warning("synch token expired, fetching events again")
-                    return self._fetch_events_(calendar)
+                    return self.__fetch_events__(calendar)
                 raise e
 
         return _events
 
-    def _delete_event_(self, calendar: Calendar, event: Event) -> None:
+    def __delete_event__(self, calendar: Calendar, event: Event) -> None:
+        """Delete a specific `event` from a `calendar`."""
         self.logger.debug(f"Deleting event {event} from calendar {calendar}")
         self.service.events().delete(calendarId=calendar.id, eventId=event.id).execute()
 
-    def _synch_events_(self, calendar: Calendar) -> None:
-        fetched_events = self._fetch_events_(calendar)
+    def __synch_events__(self, calendar: Calendar) -> None:
+        """Synch all events bidirectionally between local cache and remote API."""
+        fetched_events = self.__fetch_events__(calendar)
         event_cache = calendar._events_cache_
 
         # push events from cache to api
@@ -190,6 +200,8 @@ class CalendarAPI:
 
 @dataclass
 class Event:
+    """Representation of an Event in a google calendar."""
+
     summary: str = ""
     id: Optional[str] = None
     description: Optional[str] = None
@@ -199,6 +211,7 @@ class Event:
     timezone: str = "UTC"
 
     def to_dict(self) -> dict[str, Any]:
+        """Convert to a dictionary representiation."""
         return {
             "id": self.id,
             "summary": self.summary,
@@ -209,6 +222,7 @@ class Event:
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Event:
+        """Convert from a dictionary representation."""
         return cls(
             id=data.get("id"),
             summary=data.get("summary", ""),
@@ -218,12 +232,13 @@ class Event:
         )
 
     def __str__(self) -> str:
+        """Event string representation."""
         return f"Event: {self.summary} at {self.start}"
 
 
 @dataclass
 class Calendar:
-    """Object representing the Calendar API Object"""
+    """Object representing a Calendar in google calendar."""
 
     summary: str
     id: Optional[str] = None
@@ -239,6 +254,7 @@ class Calendar:
     _events_cache_: list[Event] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Convert to a dictionary representation."""
         return {
             "id": self.id,
             "summary": self.summary,
@@ -252,6 +268,7 @@ class Calendar:
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> Calendar:
+        """Convert from a dictionary representaiton."""
         return cls(
             id=data.get("id"),
             summary=data.get("summary", ""),
@@ -264,28 +281,39 @@ class Calendar:
         )
 
     def __str__(self) -> str:
+        """Calendar string representation."""
         return f"Calendar: {self.summary}"
 
     def ensure_events_(self, evts: list[Event] | list[dict[str, Any]]) -> list[Event]:
+        """Convert a list of `Event` of `dict` into a list of `Event`."""
         return [evt if isinstance(evt, Event) else Event.from_api(evt) for evt in evts]
 
     @property
     def events(self) -> list[Event]:
+        """Return all known events on this calendar.
+
+        fetches from the cache if found, or remotely if not.
+        """
         if self._events_cache_:
             return self.ensure_events_(self._events_cache_)
         if api := self.api:
-            self._events_cache_ = api._fetch_events_(self)
+            self._events_cache_ = api.__fetch_events__(self)
             return self.ensure_events_(self._events_cache_)
         raise RuntimeError("Cannot search for events on calendar without API object")
 
     def synch(self) -> None:
-        """synchhronise local state with API state"""
+        """Synchhronise local state with the API state."""
         if api := self.api:
-            api._synch_events_(self)
+            api.__synch_events__(self)
         else:
             raise RuntimeError("Cannot synch to a calendar without API object")
 
     def update_event(self, old_event: Event, new_event: Event) -> None:
+        """Update an `Event` object.
+
+        `old_event` will contain the non-None details of `new_event` in the cache.
+        run `synch` to push changes to the API.
+        """
         for i, event in enumerate(self._events_cache_):
             if event.id == old_event.id:
                 new_detail = clean_dict(old_event.to_dict()) | clean_dict(
@@ -299,11 +327,19 @@ class Calendar:
             raise RuntimeError("Cannot update events on calendar without API object")
 
     def create_event(self, new_event: Event) -> None:
+        """Add `new_event` to the events cache.
+
+        run `synch` to push changes to the API.
+        """
         self._events_cache_.append(new_event)
 
     def delete_event(self, event: Event) -> None:
+        """Delete `event` from the events cache.
+
+        run `synch` to push changes to the API.
+        """
         if api := self.api:
-            api._delete_event_(self, event)
+            api.__delete_event__(self, event)
             self._events_cache_.remove(event)
         else:
             raise RuntimeError("Cannot delete events on calendar without API object")

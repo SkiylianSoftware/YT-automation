@@ -1,17 +1,22 @@
+"""Main entrypoint to YouTube Automation."""
+
 import logging.config
 import sys
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
 from logging import getLogger
 from pathlib import Path
-import os
 
 from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
 from .youtube import YouTube
 
-def parse_args() -> tuple[ArgumentParser, Namespace]:
+
+def setup_parser() -> ArgumentParser:
+    """Configure parser arguments."""
     is_nox = "nox" in sys.orig_argv[0]
-    parser = ArgumentParser(description="YouTube Automation scripts", prog="nox --" if is_nox else __name__)
+    parser = ArgumentParser(
+        description="YouTube Automation scripts", prog="nox --" if is_nox else __name__
+    )
 
     # Shared arguments come before sub-command arguments
     parser.add_argument(
@@ -50,31 +55,18 @@ def parse_args() -> tuple[ArgumentParser, Namespace]:
         help="Timezone to use if creating new calendars, or adding events to calendars",
     )
 
-    # Parse arguments and Configure logging
-    args = parser.parse_args()
-    return parser, parser.parse_args()
+    return parser
 
 
 def main() -> int:
+    """Entrypoint for the whole program."""
     LOG = getLogger("main")
 
-    parser, args = parse_args()
+    parser = setup_parser()
+    args = parser.parse_args()
 
-    if func := getattr(args, "func", None):
-        try:
-            yt = YouTube(client_env=args.env_client, token_env=args.env_token)
-            yt.authenticate()
-        except Exception as e:
-            LOG.error("Could not authenticate to YouTube")
-            LOG.error(e)
-        LOG.info(f"Running entrypoint {func.__name__}")
-        return func(yt)
+    # configure logging
 
-    parser.print_help()
-    return 0
-
-
-if __name__ == "__main__":
     logging.config.dictConfig(
         {
             "version": 1,
@@ -105,15 +97,15 @@ if __name__ == "__main__":
 
     if func := getattr(args, "func", None):
         try:
-            yt = YouTube(youtube_env=args.env_youtube)
+            yt = YouTube(
+                client_env=args.env_client, token_env=args.env_token
+            )  # type:ignore [call-arg]
             yt.authenticate()
         except Exception as e:
             LOG.error("Could not authenticate to YouTube")
             LOG.error(e)
-            return 1
-
         LOG.info(f"Running entrypoint {func.__name__}")
-        return func(args, yt)
+        return func(yt)
 
     parser.print_help()
     return 0

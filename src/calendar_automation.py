@@ -1,3 +1,5 @@
+"""Automation to move videos into calendars."""
+
 import re
 from argparse import Namespace
 from logging import getLogger
@@ -13,6 +15,7 @@ EVT_VID_ID = re.compile(r"ID: (?P<video_id>\S+)")
 
 
 def fetch_video_event(video: Video, events: list[Event]) -> Event | None:
+    """Find the `event` that corresponds to the `video`."""
     for event in events:
         if (
             (desc := event.description)
@@ -24,7 +27,7 @@ def fetch_video_event(video: Video, events: list[Event]) -> Event | None:
 
 
 def add_videos_to_calendar(videos: list[Video], calendar: Calendar) -> None:
-    """Add videos to calendar, or update the calendar event details if different"""
+    """Add videos to calendar, or update the calendar event details if different."""
     log = LOG.getChild("calendar-synch")
 
     events = calendar.events
@@ -59,8 +62,7 @@ def add_videos_to_calendar(videos: list[Video], calendar: Calendar) -> None:
 
 
 def remove_videos_from_calendar(videos: list[Video], calendar: Calendar) -> None:
-    """Remove videos from a calendar if they exist"""
-
+    """Remove videos from a calendar if they exist."""
     log = LOG.getChild("calendar-delete")
     events = calendar.events
     deleted_count = 0
@@ -82,7 +84,6 @@ def remove_videos_from_calendar(videos: list[Video], calendar: Calendar) -> None
 
 def purge_nonexistent_videos(videos: list[Video], calendar: Calendar) -> None:
     """Remove video events for videos that no longer exist."""
-
     log = LOG.getChild("calendar-purge")
     events = calendar.events
     deleted_count = 0
@@ -108,6 +109,7 @@ def purge_nonexistent_videos(videos: list[Video], calendar: Calendar) -> None:
 
 
 def calendar_automation(args: Namespace, yt: YouTube) -> int:
+    """Entrypoint for calendar automation."""
     log = LOG.getChild("calendar")
 
     # Authenticate to Google Calendar
