@@ -128,16 +128,16 @@ def calendar_automation(args: Namespace, yt: YouTube) -> int:
             # colour=CalendarColour.tomato,
         )
     )
-    privateCalendar = cal.create_calendar(
+    scheduledCalendar = cal.create_calendar(
         Calendar(
-            summary="Videos (Private)",
+            summary="Videos (Scheduled)",
             description=f"Unreleased videos for {yt.channel_name}",
             # colour=CalendarColour.lavendar,
         )
     )
     log.debug(
         f"Fetched or created the public ({publicCalendar}) "
-        f"and private ({privateCalendar}) calendars."
+        f"and scheduled ({scheduledCalendar}) calendars."
     )
 
     # Fetch all the public videos and add to the public calendar
@@ -148,18 +148,18 @@ def calendar_automation(args: Namespace, yt: YouTube) -> int:
     if public_videos:
         add_videos_to_calendar(public_videos, publicCalendar)
 
-    # Fetch all the private videos and add to the private calendar
+    # Fetch all the scheduled videos and add to the scheduled calendar
     scheduled_videos = yt.scheduled_videos
     log.debug(f"found {len(scheduled_videos)} scheduled videos")
 
     if scheduled_videos:
-        add_videos_to_calendar(scheduled_videos, privateCalendar)
+        add_videos_to_calendar(scheduled_videos, scheduledCalendar)
 
-    # Remove public videos from the private calendar
+    # Remove public videos from the scheduled calendar
     remove_videos_from_calendar(scheduled_videos, publicCalendar)
 
     # Remove videos that don't exist
-    purge_nonexistent_videos(yt.videos, privateCalendar)
+    purge_nonexistent_videos(yt.videos, scheduledCalendar)
     purge_nonexistent_videos(yt.videos, publicCalendar)
 
     log.info("All videos synched to calendars")
