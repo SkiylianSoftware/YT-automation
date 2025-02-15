@@ -53,6 +53,8 @@ class CalendarAPI:
         """Authenticate to Google calendar."""
         if not self.calendar_env.exists():
             raise FileExistsError("Calendar environment file does not exist!")
+        if not self.refresh_env.exists():
+            self.refresh_env.touch()
 
         # We attempt to use the credentials file directly
         try:
