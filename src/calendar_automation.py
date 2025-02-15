@@ -159,6 +159,7 @@ def calendar_automation(args: Namespace, yt: YouTube) -> int:
 
     # Remove public videos from the scheduled calendar
     remove_videos_from_calendar(scheduled_videos, publicCalendar)
+    remove_videos_from_calendar(public_videos, scheduledCalendar)
 
     # Remove videos that don't exist
     purge_nonexistent_videos(yt.videos, scheduledCalendar)
