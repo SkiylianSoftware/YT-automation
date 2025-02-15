@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
+from .re_auth import re_auth
 from .youtube import YouTube
 
 
@@ -55,12 +56,29 @@ def setup_parser() -> ArgumentParser:
         help="Timezone to use if creating new calendars, or adding events to calendars",
     )
 
+    # Re-auth endpoint inherits from essentially all parsers.
+    reauth_parser = subcommands.add_parser("reauth-clients")
+    reauth_parser.add_argument(
+        "--env-calendar",
+        type=Path,
+        default=Path(".env.calendar"),
+        help="Filepath for the calendar credentials",
+    )
+    reauth_parser.add_argument(
+        "--timezone",
+        type=str,
+        default="UTC",
+        help="Timezone to use if creating new calendars, or adding events to calendars",
+    )
+    reauth_parser.set_defaults(func=re_auth)
+
     return parser
 
 
 def main() -> int:
     """Entrypoint for the whole program."""
     LOG = getLogger("main")
+    log = LOG.getChild("entry")
 
     parser = setup_parser()
     args = parser.parse_args()
@@ -97,15 +115,14 @@ def main() -> int:
 
     if func := getattr(args, "func", None):
         try:
-            yt = YouTube(
-                client_env=args.env_client, token_env=args.env_token
-            )  # type:ignore [call-arg]
+            yt = YouTube(youtube_env=args.env_youtube)  # type:ignore [call-arg]
             yt.authenticate()
         except Exception as e:
-            LOG.error("Could not authenticate to YouTube")
-            LOG.error(e)
-        LOG.info(f"Running entrypoint {func.__name__}")
-        return func(yt)
+            log.error("Could not authenticate to YouTube")
+            raise e
+
+        log.info(f"Running entrypoint {func.__name__}")
+        return func(args, yt)
 
     parser.print_help()
     return 0
