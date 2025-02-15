@@ -2,10 +2,7 @@ from argparse import Namespace
 from logging import getLogger
 
 from google.auth.transport.requests import Request
-from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
 from .calendar import SCOPES, CalendarAPI
 from .youtube import YouTube
@@ -14,10 +11,9 @@ LOG = getLogger("re-auth")
 
 
 def re_auth(args: Namespace, yt: YouTube) -> int:
-    """Entrypoint for calendar automation."""
-    log = LOG.getChild("calendar")
-
+    """Entrypoint for re-authentication."""
     # Authenticate to Google Calendar
+    log = LOG.getChild("calendar")
     cal = CalendarAPI(calendar_env=args.env_calendar, timezone=args.timezone)
     try:
         cal.authenticate()
@@ -34,6 +30,11 @@ def re_auth(args: Namespace, yt: YouTube) -> int:
             creds.refresh(Request())
 
         elif not creds.valid:
-            raise Exception("OAuth credentials invalid!")
+            log.error("OAuth credentials invalid!")
+            return 1
 
         cal.__write_creds__(creds)
+
+    # Authenticate to the next thing
+
+    return 0

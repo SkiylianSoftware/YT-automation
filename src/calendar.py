@@ -36,6 +36,7 @@ class CalendarAPI:
 
     @property
     def refresh_env(self) -> Path:
+        """Where we store the refreshed token."""
         return self.calendar_env.with_suffix(f"{self.calendar_env.suffix}.refresh")
 
     @property
