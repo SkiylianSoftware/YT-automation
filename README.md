@@ -2,6 +2,7 @@
 Scripts I use for youtube automation.
 
 ### What's included
+- Re-Authentication   - Allows the user to manually re-authenticate to all services without running any other entrypoints.
 - Playlist Automation - Automatically add videos to their respective playlists based on video and playlist title. 
 - Calendar Automation - Automatically put released and upcoming videos in two google calendars based on publish date.
 
@@ -27,6 +28,9 @@ Next, create a file `.env.calendar`, and populate it with the contents of the cr
 
 The first time you run any scripts that utilise the Calendar API, you will be asked to authenticate the the application. Follow the instructions provided.
 
+### Re-Authentication
+You will need to create all credentials as described in the above integrations
+
 ## Usage
 
 This project makes use of [nox](https://nox.thea.codes/en/stable/index.html) to manage dependencies. We distribute a few nox sessions that you can execute to perform tasks.
@@ -36,6 +40,9 @@ To automatically move videos to playlists, run `nox -- playlist-automation`.
 
 To automatically populate a google calendar with scheduled and past uploads, run `nox -- calendar-automation`
     run `nox -- calendar-automation --help` for further help.
+
+To ensure all client credentials are up to date, run `nox -- reauth-client`
+    run `nox -- reauth-client --help` for further help.
 
 ### Program execution
 
