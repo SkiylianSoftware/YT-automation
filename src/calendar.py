@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from json import loads
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Optional, TypeVar
@@ -34,25 +35,32 @@ class CalendarAPI:
     service: build = None
 
     @property
+    def refresh_env(self) -> Path:
+        """Where we store the refreshed token."""
+        return self.calendar_env.with_suffix(f"{self.calendar_env.suffix}.refresh")
+
+    @property
     def logger(self) -> Logger:
         """Logger object for CalendarAPI."""
         return getLogger("calendar-api")
 
     def __write_creds__(self, credentials: Credentials) -> None:
         """Write credentials to the persistent storage location."""
-        self.calendar_env.write_text(credentials.to_json())
+        self.refresh_env.write_text(credentials.to_json())
         self.logger.debug(f"Wrote credentials to {self.calendar_env}")
 
     def authenticate(self) -> None:
         """Authenticate to Google calendar."""
         if not self.calendar_env.exists():
             raise FileExistsError("Calendar environment file does not exist!")
+        if not self.refresh_env.exists():
+            self.refresh_env.touch()
 
         # We attempt to use the credentials file directly
         try:
             self.logger.debug("Attempting to load token from file")
-            creds = Credentials.from_authorized_user_file(
-                self.calendar_env.resolve(), SCOPES
+            creds = Credentials.from_authorized_user_info(
+                loads(self.refresh_env.read_text()), scopes=SCOPES
             )
         # Otherwise, this might be the first run, and should be the login file
         except ValueError:
@@ -60,7 +68,7 @@ class CalendarAPI:
                 "Could not load as token, attempting to load as user credentials"
             )
             flow = InstalledAppFlow.from_client_secrets_file(
-                self.calendar_env.resolve(), SCOPES
+                self.calendar_env.resolve(), scopes=SCOPES
             )
             creds = flow.run_local_server(port=0, open_browser=False)
         except Exception as e:

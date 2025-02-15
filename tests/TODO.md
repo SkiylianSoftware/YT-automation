@@ -15,6 +15,10 @@
 [ ] fetch private
 [ ] fetch scheduled
 
+## Re-Auth
+[ ] Auth Calendar
+[ ] Auth YouTube
+
 # Automation
 ## Calendar
 [ ] fetch video event
