@@ -70,11 +70,10 @@ class YouTube:
         )
         self.logger.debug(f"Authenticating with client {self.client.client_id}")
 
-        token: AccessToken = (
-            self.client.refresh_access_token(self.client.refresh_token)
-            if self.client._has_auth_credentials()
-            else self.__oath_ctx__()
-        )
+        try:
+            token: AccessToken = self.client.refresh_access_token(self.client.refresh_token)
+        except:
+            token = self.__oath_ctx__()
         token.refresh_token = token.refresh_token or self.client.refresh_token
         self.logger.debug(f"Loaded access token, expires in {token.expires_in}s")
 
