@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from json import loads
@@ -95,7 +96,9 @@ class CalendarAPI:
         _calendars = []
         page_token = None
         while True:
-            calendars = self.service.calendarList().list(pageToken=page_token).execute()
+            calendars = self.__execute_with_backoff__(
+                self.service.calendarList().list(pageToken=page_token)
+            )
 
             for calendar in calendars.get("items", []):
                 cal = Calendar.from_api(calendar)
@@ -126,7 +129,9 @@ class CalendarAPI:
             return existing
 
         self.logger.debug(f"Creating new calendar {calendar}")
-        created = self.service.calendars().insert(body=calendar).execute()
+        created = self.__execute_with_backoff__(
+            self.service.calendars().insert(body=calendar)
+        )
         self.logger.debug(f"Created new calendar {created}")
 
         cal = Calendar.from_api(created)
@@ -136,6 +141,20 @@ class CalendarAPI:
         return cal
 
     # Events operations
+
+    def __execute_with_backoff__(self, request, max_retries=10) -> Any:
+        """Execute an API command with exponential backoff."""
+        for n in range(max_retries):
+            try:
+                return request.execute()
+            except HttpError as e:
+                if e.resp.status in [403, 429]:
+                    sleep_time = 2**n
+                    self.logger.debug("Rate limit hit, Sleeping for {slee_time:.2f}s")
+                    time.sleep(sleep_time)
+                    continue
+                raise
+        raise RuntimeError(f"Could not execute {request} within maximum retries")
 
     def __fetch_events__(self, calendar: Calendar) -> list[Event]:
         """Fetch all the events on a `calendar`."""
@@ -148,7 +167,9 @@ class CalendarAPI:
                 params["synchToken"] = token
 
             try:
-                events = self.service.events().list(**params).execute()
+                events = self.__execute_with_backoff__(
+                    self.service.events().list(**params)
+                )
                 for event in events.get("items", []):
                     evt = Event.from_api(event)
                     self.logger.debug(f"found event: {evt}")
@@ -171,7 +192,9 @@ class CalendarAPI:
     def __delete_event__(self, calendar: Calendar, event: Event) -> None:
         """Delete a specific `event` from a `calendar`."""
         self.logger.debug(f"Deleting event {event} from calendar {calendar}")
-        self.service.events().delete(calendarId=calendar.id, eventId=event.id).execute()
+        self.__execute_with_backoff__(
+            self.service.events().delete(calendarId=calendar.id, eventId=event.id)
+        )
 
     def __synch_events__(self, calendar: Calendar) -> None:
         """Synch all events bidirectionally between local cache and remote API."""
@@ -183,16 +206,20 @@ class CalendarAPI:
             for fetched in fetched_events:
                 if fetched.id == event.id:
                     self.logger.debug(f"event {event} already in calendar, updating")
-                    self.service.events().update(
-                        calendarId=calendar.id, eventId=event.id, body=event.to_dict()
-                    ).execute()
+                    self.__execute_with_backoff__(
+                        self.service.events().update(
+                            calendarId=calendar.id,
+                            eventId=event.id,
+                            body=event.to_dict(),
+                        )
+                    )
                     break
             else:
                 self.logger.debug(f"event {event} new to calendar, creating")
-                created_event = (
-                    self.service.events()
-                    .insert(calendarId=calendar.id, body=event.to_dict())
-                    .execute()
+                created_event = self.__execute_with_backoff__(
+                    self.service.events().insert(
+                        calendarId=calendar.id, body=event.to_dict()
+                    )
                 )
                 calendar._events_cache_[i] = created_event
 
