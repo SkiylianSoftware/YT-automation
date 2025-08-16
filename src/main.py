@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 from logging import getLogger
 from pathlib import Path
 
+from .background_music import background_music
 from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
 from .re_auth import re_auth
@@ -21,12 +22,6 @@ def setup_parser() -> ArgumentParser:
 
     # Shared arguments come before sub-command arguments
     parser.add_argument(
-        "--env-youtube",
-        type=Path,
-        default=Path(".env.youtube"),
-        help="Filepath for the youtube credentials",
-    )
-    parser.add_argument(
         "--logging-path",
         type=Path,
         default=Path("application.log"),
@@ -38,11 +33,23 @@ def setup_parser() -> ArgumentParser:
     # Playlist automation
 
     playlist_parser = subcommands.add_parser("playlist-automation")
+    playlist_parser.add_argument(
+        "--env-youtube",
+        type=Path,
+        default=Path(".env.youtube"),
+        help="Filepath for the youtube credentials",
+    )
     playlist_parser.set_defaults(func=playlist_automation)
 
     # Calendar automation
     calendar_parser = subcommands.add_parser("calendar-automation")
     calendar_parser.set_defaults(func=calendar_automation)
+    calendar_parser.add_argument(
+        "--env-youtube",
+        type=Path,
+        default=Path(".env.youtube"),
+        help="Filepath for the youtube credentials",
+    )
     calendar_parser.add_argument(
         "--env-calendar",
         type=Path,
@@ -59,6 +66,12 @@ def setup_parser() -> ArgumentParser:
     # Re-auth endpoint inherits from essentially all parsers.
     reauth_parser = subcommands.add_parser("reauth-clients")
     reauth_parser.add_argument(
+        "--env-youtube",
+        type=Path,
+        default=Path(".env.youtube"),
+        help="Filepath for the youtube credentials",
+    )
+    reauth_parser.add_argument(
         "--env-calendar",
         type=Path,
         default=Path(".env.calendar"),
@@ -71,6 +84,40 @@ def setup_parser() -> ArgumentParser:
         help="Timezone to use if creating new calendars, or adding events to calendars",
     )
     reauth_parser.set_defaults(func=re_auth)
+
+    # Background music automation
+    music_parser = subcommands.add_parser("background-music")
+    music_parser.add_argument(
+        "--project",
+        required=True,
+        type=Path,
+        help="Filepath of the shotcut project to parse",
+    )
+    music_parser.add_argument(
+        "--music",
+        required=True,
+        type=Path,
+        help="Filepath of the music folder background songs are stored in",
+    )
+    music_parser.add_argument(
+        "--min-gap",
+        type=int,
+        default=5,
+        help="Minimum gap required to be left between background music tracks",
+    )
+    music_parser.add_argument(
+        "--max-gap",
+        type=int,
+        default=20,
+        help="Maximum gap that can be left between background music tracks",
+    )
+    music_parser.add_argument(
+        "--track-name",
+        type=str,
+        default="Music",
+        help="The name of the video track that background music will be added to.",
+    )
+    music_parser.set_defaults(func=background_music)
 
     return parser
 
@@ -114,15 +161,21 @@ def main() -> int:
     # authenticate to youtube and run the requested entrypoint
 
     if func := getattr(args, "func", None):
-        try:
-            yt = YouTube(youtube_env=args.env_youtube)  # type:ignore [call-arg]
-            yt.authenticate()
-        except Exception as e:
-            log.error("Could not authenticate to YouTube")
-            raise e
+        # A lot of scripts inherit the youtube environment
+        if yt := getattr(args, "env_youtube", None):
+            try:
+                yt = YouTube(youtube_env=yt)  # type:ignore [call-arg]
+                yt.authenticate()
+            except Exception as e:
+                log.error("Could not authenticate to YouTube")
+                raise e
 
-        log.info(f"Running entrypoint {func.__name__}")
-        return func(args, yt)
+            log.info(f"Running entrypoint {func.__name__}")
+            return func(args, yt)
+
+        # but not all of them do
+        else:
+            return func(args)
 
     parser.print_help()
     return 0
