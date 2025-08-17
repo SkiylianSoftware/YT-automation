@@ -95,8 +95,8 @@ def setup_parser() -> ArgumentParser:
     )
     music_parser.add_argument(
         "--music",
-        required=True,
         type=Path,
+        nargs="+",
         help="Filepath of the music folder background songs are stored in",
     )
     music_parser.add_argument(
@@ -116,6 +116,11 @@ def setup_parser() -> ArgumentParser:
         type=str,
         default="Music",
         help="The name of the video track that background music will be added to.",
+    )
+    music_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Exit the program without writing changes to disk; used to view what song choices would be made.",
     )
     music_parser.set_defaults(func=background_music)
 

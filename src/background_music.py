@@ -76,14 +76,14 @@ def _get_properties(element: Element) -> dict[str, str]:
     }
 
 
-def find_songs(music: Path, root: Element) -> list[Song]:
+def find_songs(music: list[Path], root: Element) -> list[Song]:
     """Find a reference to all valid songs in the project."""
     songs = []
     for item in root.findall("chain"):
         properties = _get_properties(item)
         path = Path(properties["resource"])
         if (
-            (path.is_relative_to(music))
+            (any(path.is_relative_to(mpath) for mpath in music))
             and (id := item.get("id"))
             and (out := item.get("out"))
         ):
@@ -230,9 +230,13 @@ def _get_song_timeline(
     return timeline
 
 
-def _debug_locations(log: Logger, locs: list[tuple[timedelta, timedelta]]):
+def _debug_locations(log: Logger, locs: list[tuple[timedelta, timedelta]]) ->None:
     for s, e in locs:
         log.debug(f"- {s} -> {e} ({e - s})")
+def _debug_songs(log: Logger, songs: list[tuple[timedelta, Song]], prefix:str="Placed") -> None:
+    log.info(f"{prefix} {len(songs)} songs".capitalize())
+    for start, song in songs:
+        log.debug(f"- {start} {song}")
 
 
 def find_song_locations(
@@ -384,10 +388,12 @@ def write_songs_to_track(
     track: Element, songs: list[tuple[timedelta, Song]], all_songs: list[Song]
 ) -> None:
     """Add songs from the list to the track element."""
+    log = LOG.getChild("song-writer")
     used_songs = _get_song_timeline(track, all_songs)
     used_songs.extend(songs)
 
     sorted_songs = sorted(used_songs, key=lambda s: s[0])
+    _debug_songs(log, sorted_songs, "Timeline will contain")
 
     # clear the old songs list
     for blank in track.findall("blank"):
@@ -412,7 +418,7 @@ def write_songs_to_track(
         track.append(filtr)
 
 
-def write_tree(tree: ElementTree[Element], project: Path) -> None:
+def write_tree(tree: ElementTree, project: Path) -> None:  # type:ignore[arg-type]
     """Save the element tree to disk."""
     ET.indent(tree)
     tree.write(project, encoding="utf-8", xml_declaration=True)
@@ -421,6 +427,9 @@ def write_tree(tree: ElementTree[Element], project: Path) -> None:
 def background_music(args: Namespace) -> int:
     """Entrypoint for background music automation."""
     log = LOG.getChild("music")
+    if not args.music:
+        log.error("You must specify a music path to locate songs within the project playlist")
+        return 1
 
     # Fetch the project file and parse the XML
     project = find_project(args.project)
@@ -496,15 +505,16 @@ def background_music(args: Namespace) -> int:
     if not writable_songs:
         log.error("We could not insert any songs into the provided positions")
         return 1
-    log.info(f"Placed {len(writable_songs)} songs into the provided positions")
-    for start, song in writable_songs:
-        log.debug(f"- {start} {song}")
+    _debug_songs(log, writable_songs)
 
     # Delete the markers:
     delete_markers(root)
 
     # Write back to file
     write_songs_to_track(song_track, writable_songs, songs)
-    write_tree(tree, project)
+    if not args.dry_run:
+        write_tree(tree, project)  # type:ignore[arg-type]
+    else:
+        log.info("Project on disk has not been modified, run"" without `--dry-run` set to make changes.")
 
     return 0
