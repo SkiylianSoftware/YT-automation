@@ -170,6 +170,94 @@ def _construct_gain_filer(length: str, gain: int = -20) -> Element:
     return filter_elem
 
 
+def _construct_blend(main: Element, song_track: Element) -> None:
+    this_track = str(1 + _node_id(song_track))
+
+    # find all transition IDs
+    audio_mix = None
+    audio_index = 0
+    video_blend = None
+    video_index = 0
+    last_transition = 0
+    last_index = 0
+
+    for i, item in enumerate(list(main)):
+        if item.tag != "transition":
+            continue
+
+        this_id = _node_id(item)
+        props = _get_properties(item)
+
+        last_transition = max(last_transition, this_id)
+        if this_id == last_transition:
+            last_index = i
+
+        # Determine if this transition applies to our song track
+        if props["b_track"] == this_track:
+            match props["a_track"]:
+                case "0":
+                    video_blend = item
+                    video_index = i
+                case "1":
+                    audio_mix = item
+                    audio_index = i
+
+    def _audio_blend(id: int) -> Element:
+        audio_transition = ET.Element("transition", {"id": f"transition{id}"})
+        a_track = ET.SubElement(audio_transition, "property", {"name": "a_track"})
+        a_track.text = "0"
+        b_track = ET.SubElement(audio_transition, "property", {"name": "b_track"})
+        b_track.text = this_track
+        mlt_service = ET.SubElement(
+            audio_transition, "property", {"name": "mlt_service"}
+        )
+        mlt_service.text = "mix"
+        always_active = ET.SubElement(
+            audio_transition, "property", {"name": "always_active"}
+        )
+        always_active.text = "1"
+        sum_property = ET.SubElement(audio_transition, "property", {"name": "sum"})
+        sum_property.text = "1"
+        return audio_transition
+
+    def _video_blend(id: int) -> Element:
+        video_transition = ET.Element("transition", {"id": f"transition{id}"})
+        a_track = ET.SubElement(video_transition, "property", {"name": "a_track"})
+        a_track.text = "1"
+        b_track = ET.SubElement(video_transition, "property", {"name": "b_track"})
+        b_track.text = this_track
+        version = ET.SubElement(video_transition, "property", {"name": "version"})
+        version.text = "0.1"
+        mlt_service = ET.SubElement(
+            video_transition, "property", {"name": "mlt_service"}
+        )
+        mlt_service.text = "frei0r.cairoblend"
+        threads = ET.SubElement(video_transition, "property", {"name": "threads"})
+        threads.text = "0"
+        disable = ET.SubElement(video_transition, "property", {"name": "disable"})
+        disable.text = "0"
+        mode = ET.SubElement(video_transition, "property", {"name": "1"})
+        mode.text = "normal"
+        return video_transition
+
+    # Create new if empty, or replace exisitng
+    if audio_mix is None:
+        main.insert(last_index + 1, _audio_blend(last_transition + 1))
+        last_transition += 1
+        last_index += 1
+    else:
+        main.remove(audio_mix)
+        main.insert(audio_index, _audio_blend(_node_id(audio_mix)))
+
+    if video_blend is None:
+        main.insert(last_index + 1, _video_blend(last_transition + 1))
+        last_transition += 1
+        last_index += 1
+    else:
+        main.remove(video_blend)
+        main.insert(video_index, _video_blend(_node_id(video_blend)))
+
+
 def get_or_create_song_track(root: Element, name: str) -> Element:
     """Return the chosen track, or create new if none found."""
     max_id = 0
@@ -230,10 +318,14 @@ def _get_song_timeline(
     return timeline
 
 
-def _debug_locations(log: Logger, locs: list[tuple[timedelta, timedelta]]) ->None:
+def _debug_locations(log: Logger, locs: list[tuple[timedelta, timedelta]]) -> None:
     for s, e in locs:
         log.debug(f"- {s} -> {e} ({e - s})")
-def _debug_songs(log: Logger, songs: list[tuple[timedelta, Song]], prefix:str="Placed") -> None:
+
+
+def _debug_songs(
+    log: Logger, songs: list[tuple[timedelta, Song]], prefix: str = "Placed"
+) -> None:
     log.info(f"{prefix} {len(songs)} songs".capitalize())
     for start, song in songs:
         log.debug(f"- {start} {song}")
@@ -395,13 +487,13 @@ def write_songs_to_track(
     sorted_songs = sorted(used_songs, key=lambda s: s[0])
     _debug_songs(log, sorted_songs, "Timeline will contain")
 
-    # clear the old songs list
+    # Clear the old songs list
     for blank in track.findall("blank"):
         track.remove(blank)
     for entry in track.findall("entry"):
         track.remove(entry)
 
-    # insert the new one
+    # Insert the new songs
     now = timedelta(0)
     for start, song in sorted_songs:
         blank = ET.Element("blank", {"length": from_time(start - now)})
@@ -428,7 +520,9 @@ def background_music(args: Namespace) -> int:
     """Entrypoint for background music automation."""
     log = LOG.getChild("music")
     if not args.music:
-        log.error("You must specify a music path to locate songs within the project playlist")
+        log.error(
+            "You must specify a music path to locate songs within the project playlist"
+        )
         return 1
 
     # Fetch the project file and parse the XML
@@ -475,6 +569,9 @@ def background_music(args: Namespace) -> int:
     )
     song_track.append(gain_filter)
 
+    # Write or modify the blending mode on the track
+    _construct_blend(main_track, song_track)
+
     # Determine valid song locations
     song_locations = find_song_locations(
         song_track, markers, songs, timedelta(seconds=args.min_gap)
@@ -515,6 +612,9 @@ def background_music(args: Namespace) -> int:
     if not args.dry_run:
         write_tree(tree, project)  # type:ignore[arg-type]
     else:
-        log.info("Project on disk has not been modified, run"" without `--dry-run` set to make changes.")
+        log.info(
+            "Project on disk has not been modified, run"
+            " without `--dry-run` set to make changes."
+        )
 
     return 0

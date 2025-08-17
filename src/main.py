@@ -120,7 +120,8 @@ def setup_parser() -> ArgumentParser:
     music_parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Exit the program without writing changes to disk; used to view what song choices would be made.",
+        help="Exit the program without writing changes to disk;"
+        " used to view what song choices would be made.",
     )
     music_parser.set_defaults(func=background_music)
 
