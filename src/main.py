@@ -102,13 +102,13 @@ def setup_parser() -> ArgumentParser:
     music_parser.add_argument(
         "--min-gap",
         type=int,
-        default=5,
+        default=0,
         help="Minimum gap required to be left between background music tracks",
     )
     music_parser.add_argument(
         "--max-gap",
         type=int,
-        default=20,
+        default=10,
         help="Maximum gap that can be left between background music tracks",
     )
     music_parser.add_argument(

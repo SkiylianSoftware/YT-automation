@@ -525,6 +525,11 @@ def background_music(args: Namespace) -> int:
         )
         return 1
 
+    assert args.min_gap >= 0, "Cannot specify a negative minimum gap"
+    assert (
+        args.max_gap >= args.min_gap
+    ), "The maximum gap must be larger than the minimum gap"
+
     # Fetch the project file and parse the XML
     project = find_project(args.project)
     if not project:
