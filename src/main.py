@@ -27,6 +27,12 @@ def setup_parser() -> ArgumentParser:
         default=Path("application.log"),
         help="Filepath for the output log.",
     )
+    parser.add_argument(
+        "--append-log",
+        action="store_true",
+        help="If set, append to the end of the log rather than"
+        "clearing at each execution",
+    )
 
     subcommands = parser.add_subparsers(help="sub-command help")
 
@@ -112,6 +118,12 @@ def setup_parser() -> ArgumentParser:
         help="Maximum gap that can be left between background music tracks",
     )
     music_parser.add_argument(
+        "--gain",
+        type=int,
+        default=-25,
+        help="The gain to apply to the background music track by default",
+    )
+    music_parser.add_argument(
         "--track-name",
         type=str,
         default="Music",
@@ -151,7 +163,7 @@ def main() -> int:
                     "level": "DEBUG",
                     "formatter": "file",
                     "filename": args.logging_path,
-                    "mode": "a",
+                    "mode": "a" if args.append_log else "w",
                 },
                 "stream": {
                     "class": "logging.StreamHandler",

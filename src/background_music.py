@@ -545,6 +545,7 @@ def background_music(args: Namespace) -> int:
     songs = find_songs(args.music, root)
     if not songs:
         log.error("Could not find any valid songs in the project")
+        log.info("Import any background music you want to use into the project")
         return 1
     log.info(f"found {len(songs)} songs")
     log.debug(songs)
@@ -561,14 +562,16 @@ def background_music(args: Namespace) -> int:
     song_track = get_or_create_song_track(root, args.track_name)
 
     # Write or modify the filter on the track
-    gain_filter = _construct_gain_filer(main_track.get("out", "00:00:00.000"))
+    gain_filter = _construct_gain_filer(
+        main_track.get("out", "00:00:00.000"), args.gain
+    )
     if existing := song_track.find("filter"):
         song_track.remove(existing)
     gain_filter.set(
         "id",
         (
-            "filter" + (str(_node_id(filters) + 1))
-            if (filters := _find_filters(root)[-1])
+            "filter" + (str(_node_id(filtr) + 1))
+            if ((filters := _find_filters(root)) and (filtr := filters[-1]))
             else "0"
         ),
     )
