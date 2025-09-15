@@ -53,6 +53,9 @@ To automatically move videos to playlists, run `nox -- playlist-automation`.
 To automatically populate a google calendar with scheduled and past uploads, run `nox -- calendar-automation`
     run `nox -- calendar-automation --help` for further help.
 
+To automatically populate a google calendar with scheduled and past uploads, run `nox -- background-music`
+    run `nox -- background-music --help` for further help.
+
 To ensure all client credentials are up to date, run `nox -- reauth-client`
     run `nox -- reauth-client --help` for further help.
 

@@ -1,8 +1,9 @@
 import re
+import signal
 import xml.etree.ElementTree as ET
 from argparse import Namespace
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from logging import Logger, getLogger
 from pathlib import Path
 from random import shuffle
@@ -63,6 +64,52 @@ def find_project(path: Path) -> Path | None:
 
     elif path.suffix == ".mlt":
         return path
+
+    return None
+
+
+class Expired(Exception):
+    pass
+
+
+def _timed_out(signum, frame):
+    raise Expired
+
+
+def find_latest_project(path: Path) -> Path | None:
+    """Return the latest modified project file."""
+    if not path.is_dir():
+        return None
+
+    # fetch the files in sorted order
+    files = list(path.rglob("*.mlt"))
+    modified_times = {
+        f: datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc)
+        for f in files
+        if not ISO_DATE.search(f.stem)
+    }
+    sorted_files = sorted(modified_times, key=lambda x: modified_times[x])[::-1]
+
+    # fetch the user input y/n
+    signal.signal(signal.SIGALRM, _timed_out)
+    print(
+        "Showing files from most recent to least, you have "
+        "10 seconds to make a selection or the current will be chosen."
+    )
+    for f in sorted_files:
+        signal.alarm(10)
+        try:
+            ans = None
+            while ans not in ["y", "n"]:
+                ans = input(f"Use {f.name} (y/n):\n>> ").strip().lower()
+                if ans == "y":
+                    signal.alarm(0)
+                    return f
+            signal.alarm(0)
+            continue
+        except Expired:
+            print(f"No answer provided in 10 seconds, defaulting to {f}")
+            return f
 
     return None
 
@@ -531,9 +578,13 @@ def background_music(args: Namespace) -> int:
     ), "The maximum gap must be larger than the minimum gap"
 
     # Fetch the project file and parse the XML
-    project = find_project(args.project)
+    project = (
+        find_project(args.project)
+        if args.project
+        else find_latest_project(args.project_path)
+    )
     if not project:
-        log.error(f"Could not find project file at {args.project}")
+        log.error(f"Could not find project file at {args.project or args.project_path}")
         return 1
     log.debug(f"Using {project} as the shotcut project")
 

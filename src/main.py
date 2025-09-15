@@ -93,11 +93,17 @@ def setup_parser() -> ArgumentParser:
 
     # Background music automation
     music_parser = subcommands.add_parser("background-music")
-    music_parser.add_argument(
+    music_project = music_parser.add_mutually_exclusive_group(required=True)
+    music_project.add_argument(
         "--project",
-        required=True,
         type=Path,
         help="Filepath of the shotcut project to parse",
+    )
+    music_project.add_argument(
+        "--project-path",
+        type=Path,
+        help="Filepath of the shotcut projects folder to search "
+        "for the modified latest entry",
     )
     music_parser.add_argument(
         "--music",
