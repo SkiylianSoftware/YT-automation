@@ -73,7 +73,7 @@ class CalendarAPI:
             )
             creds = flow.run_local_server(port=0, open_browser=False)
         except Exception as e:
-            raise e
+            raise LookupError(*e.args)
 
         self.logger.debug("Loaded credentials")
 

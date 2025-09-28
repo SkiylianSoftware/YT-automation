@@ -116,10 +116,17 @@ def calendar_automation(args: Namespace, yt: YouTube) -> int:
     try:
         cal = CalendarAPI(calendar_env=args.env_calendar, timezone=args.timezone)
         cal.authenticate()
-    except Exception as e:
-        log.error("Could not authenticate to Google calendar")
+    except LookupError as e:
+        log.error("Could not authenticate to Google calendar, retrying 1/2")
         log.error(e)
-        return 1
+        try:
+            cal = CalendarAPI(calendar_env=args.env_calendar, timezone=args.timezone)
+            cal.refresh_env.unlink(True)
+            cal.authenticate()
+        except Exception as e:
+            log.error("Could not authenticate to Google calendar")
+            log.error(e)
+            return 1
 
     # Check the calendars exist
 

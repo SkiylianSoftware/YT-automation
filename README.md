@@ -5,6 +5,7 @@ Scripts I use for youtube automation.
 - Re-Authentication   - Allows the user to manually re-authenticate to all services without running any other entrypoints.
 - Playlist Automation - Automatically add videos to their respective playlists based on video and playlist title. 
 - Calendar Automation - Automatically put released and upcoming videos in two google calendars based on publish date.
+- Background Music    - Automatically populate a shotcut file with a random selection of background music in its own track.
 
 ## Setup
 
@@ -31,6 +32,17 @@ The first time you run any scripts that utilise the Calendar API, you will be as
 ### Re-Authentication
 You will need to create all credentials as described in the above integrations
 
+### Background Music
+To supply background music, you will need to:
+- Import all of the music tracks into the project playlist you would like to be selectable for the background music
+- Provide the filepaths of any background music folders.
+
+To use; Save the project with the imported music, run the program with the provided arguments, and then reload the project from disk. You should see any markers deleted, and song track populated.
+
+*Note*: Pairs of markers denote regions music can be placed. Markers cannot be used to overwrite songs already in the timeline.
+*Note*: If an odd number of markers is provided, a virtual marker is placed at the end of the timeline.
+*Note*: If no markers are provided, a virtual marker is placed at the begining and end of the timeline.
+
 ## Usage
 
 This project makes use of [nox](https://nox.thea.codes/en/stable/index.html) to manage dependencies. We distribute a few nox sessions that you can execute to perform tasks.
@@ -40,6 +52,9 @@ To automatically move videos to playlists, run `nox -- playlist-automation`.
 
 To automatically populate a google calendar with scheduled and past uploads, run `nox -- calendar-automation`
     run `nox -- calendar-automation --help` for further help.
+
+To automatically populate a google calendar with scheduled and past uploads, run `nox -- background-music`
+    run `nox -- background-music --help` for further help.
 
 To ensure all client credentials are up to date, run `nox -- reauth-client`
     run `nox -- reauth-client --help` for further help.
