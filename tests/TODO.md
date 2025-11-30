@@ -19,6 +19,14 @@
 [ ] Auth Calendar
 [ ] Auth YouTube
 
+## Music
+[ ] Locates tracks
+[ ] etcetera
+
+## All
+[ ] Runs Calendar
+[ ] Runs YouTube
+
 # Automation
 ## Calendar
 [ ] fetch video event

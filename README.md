@@ -85,6 +85,7 @@ A standard linting pass for a developer would probably look like `nox -t format 
 ### Testing
 
 Running `nox -s test` will execute the PyTest tests with `coverage` enabled, and provide a coverage report to stdout.
+Testing coverage is slightly lacking... Please help!
 
 ### Cleanup
 
