@@ -39,7 +39,7 @@ def setup_parser() -> ArgumentParser:
 
     # Playlist automation
 
-    playlist_parser = subcommands.add_parser("playlist-automation", aliases="playlist")
+    playlist_parser = subcommands.add_parser("playlist-automation", aliases=["playlist"])
     playlist_parser.add_argument(
         "--env-youtube",
         type=Path,
@@ -49,7 +49,7 @@ def setup_parser() -> ArgumentParser:
     playlist_parser.set_defaults(func=playlist_automation)
 
     # Calendar automation
-    calendar_parser = subcommands.add_parser("calendar-automation", aliases="calendar")
+    calendar_parser = subcommands.add_parser("calendar-automation", aliases=["calendar"])
     calendar_parser.set_defaults(func=calendar_automation)
     calendar_parser.add_argument(
         "--env-youtube",
@@ -81,7 +81,7 @@ def setup_parser() -> ArgumentParser:
     )
 
     # Background music automation
-    music_parser = subcommands.add_parser("background-music", aliases="music")
+    music_parser = subcommands.add_parser("background-music", aliases=["music"])
     music_project = music_parser.add_mutually_exclusive_group(required=True)
     music_project.add_argument(
         "--project",
