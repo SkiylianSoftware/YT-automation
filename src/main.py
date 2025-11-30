@@ -10,6 +10,7 @@ from .background_music import background_music
 from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
 from .re_auth import re_auth
+from .run_all import add_combined, run_all
 from .youtube import YouTube
 
 
@@ -38,7 +39,7 @@ def setup_parser() -> ArgumentParser:
 
     # Playlist automation
 
-    playlist_parser = subcommands.add_parser("playlist-automation")
+    playlist_parser = subcommands.add_parser("playlist-automation", aliases="playlist")
     playlist_parser.add_argument(
         "--env-youtube",
         type=Path,
@@ -48,7 +49,7 @@ def setup_parser() -> ArgumentParser:
     playlist_parser.set_defaults(func=playlist_automation)
 
     # Calendar automation
-    calendar_parser = subcommands.add_parser("calendar-automation")
+    calendar_parser = subcommands.add_parser("calendar-automation", aliases="calendar")
     calendar_parser.set_defaults(func=calendar_automation)
     calendar_parser.add_argument(
         "--env-youtube",
@@ -70,29 +71,17 @@ def setup_parser() -> ArgumentParser:
     )
 
     # Re-auth endpoint inherits from essentially all parsers.
-    reauth_parser = subcommands.add_parser("reauth-clients")
-    reauth_parser.add_argument(
-        "--env-youtube",
-        type=Path,
-        default=Path(".env.youtube"),
-        help="Filepath for the youtube credentials",
+    add_combined(
+        subcommands,
+        "playlist-automation",
+        "calendar-automation",
+        name="reauth-clients",
+        aliases="reauth",
+        function=re_auth,
     )
-    reauth_parser.add_argument(
-        "--env-calendar",
-        type=Path,
-        default=Path(".env.calendar"),
-        help="Filepath for the calendar credentials",
-    )
-    reauth_parser.add_argument(
-        "--timezone",
-        type=str,
-        default="UTC",
-        help="Timezone to use if creating new calendars, or adding events to calendars",
-    )
-    reauth_parser.set_defaults(func=re_auth)
 
     # Background music automation
-    music_parser = subcommands.add_parser("background-music")
+    music_parser = subcommands.add_parser("background-music", aliases="music")
     music_project = music_parser.add_mutually_exclusive_group(required=True)
     music_project.add_argument(
         "--project",
@@ -142,6 +131,15 @@ def setup_parser() -> ArgumentParser:
         " used to view what song choices would be made.",
     )
     music_parser.set_defaults(func=background_music)
+
+    add_combined(
+        subcommands,
+        "playlist-automation",
+        "calendar-automation",
+        name="all-automation",
+        aliases=["everything", "all"],
+        function=run_all,
+    )
 
     return parser
 

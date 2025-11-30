@@ -3,6 +3,7 @@ Scripts I use for youtube automation.
 
 ### What's included
 - Re-Authentication   - Allows the user to manually re-authenticate to all services without running any other entrypoints.
+- All-Automation      - Automatically run the playlist / calendar endpoints at once.
 - Playlist Automation - Automatically add videos to their respective playlists based on video and playlist title. 
 - Calendar Automation - Automatically put released and upcoming videos in two google calendars based on publish date.
 - Background Music    - Automatically populate a shotcut file with a random selection of background music in its own track.
@@ -32,6 +33,9 @@ The first time you run any scripts that utilise the Calendar API, you will be as
 ### Re-Authentication
 You will need to create all credentials as described in the above integrations
 
+### All-automation
+You will need to create all credentials as described in the above integrations
+
 ### Background Music
 To supply background music, you will need to:
 - Import all of the music tracks into the project playlist you would like to be selectable for the background music
@@ -58,6 +62,9 @@ To automatically populate a google calendar with scheduled and past uploads, run
 
 To ensure all client credentials are up to date, run `nox -- reauth-client`
     run `nox -- reauth-client --help` for further help.
+
+To execute all of the automation endpoints that target external things, run `nox -- all-automation`
+    run `nox -- all-automation --help` for further help.
 
 ### Program execution
 

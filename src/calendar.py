@@ -10,6 +10,7 @@ from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Optional, TypeVar
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -50,30 +51,39 @@ class CalendarAPI:
         self.refresh_env.write_text(credentials.to_json())
         self.logger.debug(f"Wrote credentials to {self.calendar_env}")
 
+    def _auth(self) -> Credentials:
+        flow = InstalledAppFlow.from_client_secrets_file(
+            self.calendar_env.resolve(), scopes=SCOPES
+        )
+        return flow.run_local_server(port=0, open_browser=False)
+
+    def _refresh_auth(self) -> Credentials:
+        return Credentials.from_authorized_user_info(
+            loads(self.refresh_env.read_text()), scopes=SCOPES
+        )
+
     def authenticate(self) -> None:
         """Authenticate to Google calendar."""
         if not self.calendar_env.exists():
             raise FileExistsError("Calendar environment file does not exist!")
-        if not self.refresh_env.exists():
-            self.refresh_env.touch()
 
-        # We attempt to use the credentials file directly
-        try:
-            self.logger.debug("Attempting to load token from file")
-            creds = Credentials.from_authorized_user_info(
-                loads(self.refresh_env.read_text()), scopes=SCOPES
-            )
-        # Otherwise, this might be the first run, and should be the login file
-        except ValueError:
-            self.logger.warning(
-                "Could not load as token, attempting to load as user credentials"
-            )
-            flow = InstalledAppFlow.from_client_secrets_file(
-                self.calendar_env.resolve(), scopes=SCOPES
-            )
-            creds = flow.run_local_server(port=0, open_browser=False)
-        except Exception as e:
-            raise LookupError(*e.args)
+        # If the token doesn't exist, use user creds
+        if not self.refresh_env.exists():
+            self.logger.debug("Attempting to authenticate with user credentials")
+            creds = self._auth()
+
+        # Otherwise try to use the token, falling back to user creds
+        else:
+            try:
+                self.logger.debug("Attempting to authenticate with token")
+                creds = self._refresh_auth()
+
+            except RefreshError as e:
+                self.logger.warning("Could not authenticate from token")
+                self.logger.exception(e)
+                self.logger.warning("re-trying with user credentials")
+                self.refresh_env.unlink(missing_ok=True)
+                creds = self._auth()
 
         self.logger.debug("Loaded credentials")
 
