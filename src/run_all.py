@@ -13,8 +13,8 @@ def add_combined(
     subcommands: _SubParsersAction,
     *targets: str,
     name: str,
-    aliases: str | list[str],
     function: Callable[[Namespace, YouTube], int],
+    aliases: str | list[str] = [],
 ) -> ArgumentParser:
     """Generate a subparser with the arguments of the provided set of target parsers."""
     combined_parser: ArgumentParser = subcommands.add_parser(
