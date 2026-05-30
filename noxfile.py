@@ -3,21 +3,47 @@
 import nox
 
 requirements = "requirements.txt"
+requirements_base = "requirements-base.txt"
+requirements_whisper = "requirements-whisper.txt"
+requirements_google = "requirements-google.txt"
 format_dirs = ["noxfile.py", "src", "tests"]
 
-nox.options.sessions = ["run"]
+nox.options.sessions = []
 
 # Code execution
 
 
-@nox.session
+@nox.session(name="silence-removal")
+def silence_removal(session: nox.session) -> None:
+    """Run silence removal (needs Whisper + torch)."""
+    session.install("-r", requirements_base)
+    session.install("-r", requirements_whisper)
+    session.run("python3", "-m", "src.main", "silence-removal", *session.posargs, external=True)
+
+
+@nox.session(name="background-music")
+def background_music(session: nox.session) -> None:
+    """Run background music insertion (no Whisper/GPU deps)."""
+    session.install("-r", requirements_base)
+    session.run("python3", "-m", "src.main", "background-music", *session.posargs, external=True)
+
+
+@nox.session(name="playlist-automation")
+def playlist_automation(session: nox.session) -> None:
+    """Run playlist automation (needs Google API deps)."""
+    session.install("-r", requirements_base)
+    session.install("-r", requirements_google)
+    session.run("python3", "-m", "src.main", "playlist-automation", *session.posargs, external=True)
+
+
+@nox.session()
 def run(session: nox.session) -> None:
-    """Run the main script entrypoint."""
+    """Run the main script entrypoint (installs all deps)."""
     session.install("-r", requirements)
     session.run("python3", "-m", "src.main", *session.posargs, external=True)
 
 
-@nox.session
+@nox.session()
 def dev(session: nox.session) -> None:
     """Install dependecies and drop into a dev shell."""
     session.install("-r", requirements)
@@ -100,7 +126,7 @@ def mypy(session: nox.session) -> None:
             mypy_dirs.extend(["-p", directory])
 
     session.install("mypy")
-    session.install("-r", requirements)
+    session.install("-r", requirements_base)
     session.run("mypy", *mypy_dirs, "--ignore-missing-imports")
 
 
@@ -152,11 +178,11 @@ def clean(session: nox.session) -> None:
 
 @nox.session(tags=["test", "check"])
 def test(session: nox.session) -> None:
-    """Run pytest."""
+    """Run pytest (core tests only, no whisper/GPU deps needed)."""
     session.install("pytest")
     session.install("pytest-mock")
     session.install("coverage")
-    session.install("-r", requirements)
+    session.install("-r", requirements_base)
 
     session.run(
         "coverage",
@@ -169,3 +195,4 @@ def test(session: nox.session) -> None:
         "-v",
     )
     session.run("coverage", "report", "-m")
+    session.run("coverage", "html")

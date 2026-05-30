@@ -11,6 +11,7 @@ from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
 from .re_auth import re_auth
 from .run_all import add_combined, run_all
+from .silence import silence_removal
 from .youtube import YouTube
 
 
@@ -136,6 +137,73 @@ def setup_parser() -> ArgumentParser:
     )
     music_parser.set_defaults(func=background_music)
 
+    # Silence removal
+    silence_parser = subcommands.add_parser(
+        "silence-removal", aliases=["silence"]
+    )
+    silence_parser.add_argument(
+        "project",
+        type=Path,
+        help="Filepath of the Shotcut project to edit",
+    )
+    silence_parser.add_argument(
+        "--tracks",
+        type=str,
+        nargs="+",
+        default=["1"],
+        help="Track indices or names to edit (default: 1)",
+    )
+    silence_parser.add_argument(
+        "--streams",
+        type=str,
+        nargs="+",
+        default=None,
+        help="OBS audio stream indices to analyse (e.g. 3 for mic)",
+    )
+    silence_parser.add_argument(
+        "--silence-threshold",
+        type=int,
+        default=-40,
+        help="Silence detection threshold in dB (default: -40)",
+    )
+    silence_parser.add_argument(
+        "--silence-min-duration",
+        type=float,
+        default=0.15,
+        help="Minimum silence duration in seconds (default: 0.15)",
+    )
+    silence_parser.add_argument(
+        "--max-silence",
+        type=float,
+        default=None,
+        help="Ignore silences longer than this many seconds",
+    )
+    silence_parser.add_argument(
+        "--filler-words",
+        type=str,
+        default=None,
+        help="Comma-separated extra filler words to detect",
+    )
+    silence_parser.add_argument(
+        "--padding",
+        type=float,
+        default=0.1,
+        help="Padding around cut regions in seconds (default: 0.1)",
+    )
+    silence_parser.add_argument(
+        "--model",
+        type=str,
+        default="tiny.en",
+        help="Whisper model name (default: tiny.en)",
+    )
+    silence_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Output path for the edited project (default: overwrite input)",
+    )
+    silence_parser.set_defaults(func=silence_removal)
+
     add_combined(
         subcommands,
         "playlist-automation",
@@ -190,7 +258,7 @@ def main() -> int:
         # A lot of scripts inherit the youtube environment
         if yt := getattr(args, "env_youtube", None):
             try:
-                yt = YouTube(youtube_env=yt)  # type:ignore [call-arg]
+                yt = YouTube(youtube_env=yt)  # type: ignore [call-arg]
                 yt.authenticate()
             except Exception as e:
                 log.error("Could not authenticate to YouTube")

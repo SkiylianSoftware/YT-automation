@@ -1,6 +1,3 @@
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
-isodate
-python-youtube
-python-dotenv
+-r requirements-base.txt
+-r requirements-google.txt
+-r requirements-whisper.txt
