@@ -1,18 +1,29 @@
 """Main entrypoint to YouTube Automation."""
 
+import importlib
 import logging.config
 import sys
 from argparse import ArgumentParser
 from logging import getLogger
 from pathlib import Path
 
-from .background_music import background_music
-from .calendar_automation import calendar_automation
-from .playlist_automation import playlist_automation
-from .re_auth import re_auth
-from .run_all import add_combined, run_all
-from .silence import silence_removal
-from .youtube import YouTube
+
+def _lazy(mod_name: str, attr: str):
+    """Import *attr* from *mod_name* only when called."""
+    def wrapper(*args, **kwargs):
+        mod = importlib.import_module(f".{mod_name}", package=__package__)
+        return getattr(mod, attr)(*args, **kwargs)
+    return wrapper
+
+
+WHISPER_MODELS = [
+    "default",
+    "tiny.en", "tiny",
+    "base.en", "base",
+    "small.en", "small",
+    "medium.en", "medium",
+    "large-v3", "large-v3-turbo",
+]
 
 
 def setup_parser() -> ArgumentParser:
@@ -49,13 +60,13 @@ def setup_parser() -> ArgumentParser:
         default=Path(".env.youtube"),
         help="Filepath for the youtube credentials",
     )
-    playlist_parser.set_defaults(func=playlist_automation)
+    playlist_parser.set_defaults(func=_lazy("playlist_automation", "playlist_automation"))
 
     # Calendar automation
     calendar_parser = subcommands.add_parser(
         "calendar-automation", aliases=["calendar"]
     )
-    calendar_parser.set_defaults(func=calendar_automation)
+    calendar_parser.set_defaults(func=_lazy("calendar_automation", "calendar_automation"))
     calendar_parser.add_argument(
         "--env-youtube",
         type=Path,
@@ -76,13 +87,13 @@ def setup_parser() -> ArgumentParser:
     )
 
     # Re-auth endpoint inherits from essentially all parsers.
-    add_combined(
+    _lazy("run_all", "add_combined")(
         subcommands,
         "playlist-automation",
         "calendar-automation",
         name="reauth-clients",
         aliases="reauth",
-        function=re_auth,
+        function=_lazy("re_auth", "re_auth"),
     )
 
     # Background music automation
@@ -135,7 +146,7 @@ def setup_parser() -> ArgumentParser:
         help="Exit the program without writing changes to disk;"
         " used to view what song choices would be made.",
     )
-    music_parser.set_defaults(func=background_music)
+    music_parser.set_defaults(func=_lazy("background_music", "background_music"))
 
     # Silence removal
     silence_parser = subcommands.add_parser(
@@ -193,8 +204,9 @@ def setup_parser() -> ArgumentParser:
     silence_parser.add_argument(
         "--model",
         type=str,
-        default="tiny.en",
-        help="Whisper model name (default: tiny.en)",
+        default="default",
+        choices=WHISPER_MODELS,
+        help="Whisper model name (default: large-v3-turbo if GPU, tiny.en if CPU)",
     )
     silence_parser.add_argument(
         "--output",
@@ -202,15 +214,39 @@ def setup_parser() -> ArgumentParser:
         default=None,
         help="Output path for the edited project (default: overwrite input)",
     )
-    silence_parser.set_defaults(func=silence_removal)
+    silence_parser.set_defaults(func=_lazy("silence", "silence_removal"))
 
-    add_combined(
+    # Transcribe
+    transcribe_parser = subcommands.add_parser(
+        "transcribe", aliases=["captions"]
+    )
+    transcribe_parser.add_argument(
+        "media",
+        type=Path,
+        help="Filepath of the video/audio to transcribe",
+    )
+    transcribe_parser.add_argument(
+        "--model",
+        type=str,
+        default="default",
+        choices=WHISPER_MODELS,
+        help="Whisper model name (default: medium.en if GPU, tiny.en if CPU)",
+    )
+    transcribe_parser.add_argument(
+        "-o", "--output",
+        type=Path,
+        default=None,
+        help="Output SRT file path (default: <media>.srt)",
+    )
+    transcribe_parser.set_defaults(func=_lazy("silence", "transcribe"))
+
+    _lazy("run_all", "add_combined")(
         subcommands,
         "playlist-automation",
         "calendar-automation",
         name="all-automation",
         aliases=["everything", "all"],
-        function=run_all,
+        function=_lazy("run_all", "run_all"),
     )
 
     return parser
@@ -258,7 +294,7 @@ def main() -> int:
         # A lot of scripts inherit the youtube environment
         if yt := getattr(args, "env_youtube", None):
             try:
-                yt = YouTube(youtube_env=yt)  # type: ignore [call-arg]
+                yt = _lazy("youtube", "YouTube")(youtube_env=yt)
                 yt.authenticate()
             except Exception as e:
                 log.error("Could not authenticate to YouTube")

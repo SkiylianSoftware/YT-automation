@@ -1,10 +1,10 @@
 """Project entrypoints with automatic dependecy management."""
+from __future__ import annotations
 
 import nox
 
 requirements = "requirements.txt"
 requirements_base = "requirements-base.txt"
-requirements_whisper = "requirements-whisper.txt"
 requirements_google = "requirements-google.txt"
 format_dirs = ["noxfile.py", "src", "tests"]
 
@@ -13,45 +13,83 @@ nox.options.sessions = []
 # Code execution
 
 
-@nox.session(name="silence-removal")
-def silence_removal(session: nox.session) -> None:
-    """Run silence removal (needs Whisper + torch)."""
+def _ensure_whisper(session: nox.Session) -> None:
+    """Install pywhispercpp only if not already present in the session venv."""
+    try:
+        out = session.run(
+            "python3", "-c",
+            "import _pywhispercpp; print('yes')",
+            silent=True, log=False,
+        )
+        if out and out.strip() == "yes":
+            session.log("pywhispercpp already installed, skipping rebuild.")
+            return
+    except Exception:
+        pass
     session.install("-r", requirements_base)
-    session.install("-r", requirements_whisper)
-    session.run("python3", "-m", "src.main", "silence-removal", *session.posargs, external=True)
+    session.log("Building pywhispercpp with Vulkan GPU support ...")
+    session.install(
+        "git+https://github.com/absadiki/pywhispercpp",
+        env={"GGML_VULKAN": "1"},
+    )
+    session.log("pywhispercpp installed (GPU build if glslc was found).")
+
+
+def _run(session: nox.Session, *args: str) -> None:
+    """Run a command using the session's venv python."""
+    session.run("python3", "-m", "src.main", *args)
+
+
+@nox.session(name="silence-removal")
+def silence_removal(session: nox.Session) -> None:
+    """Run silence removal (Vulkan GPU build if glslc available, else CPU)."""
+    _ensure_whisper(session)
+    session.log("Running silence-removal ...")
+    _run(session, "silence-removal", *session.posargs)
+
+
+@nox.session(name="transcribe")
+def transcribe(session: nox.Session) -> None:
+    """Transcribe a video/audio file to SRT captions (GPU accelerated)."""
+    _ensure_whisper(session)
+    session.log("Running transcribe ...")
+    _run(session, "transcribe", *session.posargs)
 
 
 @nox.session(name="background-music")
-def background_music(session: nox.session) -> None:
+def background_music(session: nox.Session) -> None:
     """Run background music insertion (no Whisper/GPU deps)."""
     session.install("-r", requirements_base)
-    session.run("python3", "-m", "src.main", "background-music", *session.posargs, external=True)
+    session.log("Running background-music ...")
+    _run(session, "background-music", *session.posargs)
 
 
 @nox.session(name="playlist-automation")
-def playlist_automation(session: nox.session) -> None:
+def playlist_automation(session: nox.Session) -> None:
     """Run playlist automation (needs Google API deps)."""
     session.install("-r", requirements_base)
     session.install("-r", requirements_google)
-    session.run("python3", "-m", "src.main", "playlist-automation", *session.posargs, external=True)
+    session.log("Running playlist-automation ...")
+    _run(session, "playlist-automation", *session.posargs)
 
 
 @nox.session()
-def run(session: nox.session) -> None:
+def run(session: nox.Session) -> None:
     """Run the main script entrypoint (installs all deps)."""
     session.install("-r", requirements)
-    session.run("python3", "-m", "src.main", *session.posargs, external=True)
+    session.log("Running ...")
+    _run(session, *session.posargs)
 
 
 @nox.session()
-def dev(session: nox.session) -> None:
+def dev(session: nox.Session) -> None:
     """Install dependecies and drop into a dev shell."""
     session.install("-r", requirements)
     session.run("python3")
 
 
 @nox.session
-def docs(session: nox.session) -> None:
+def docs(session: nox.Session) -> None:
     """Build and serve the docs."""
     session.install("mkdocs")
     session.install("mkdocs-dracula-theme")
@@ -62,33 +100,33 @@ def docs(session: nox.session) -> None:
 # Linting and formatting
 
 
-def install_apt_packages(session: nox.session, *pkg_args: str) -> None:
+def install_apt_packages(session: nox.Session, *pkg_args: str) -> None:
     """Install packages with apt. requires sudo access."""
     session.run("sudo", "apt-get", "update", "-qq", external=True)
     session.run("sudo", "apt-get", "install", "-y", *pkg_args, "-qq", external=True)
 
 
-def install_npm_packages(session: nox.session, *pkg_args: str) -> None:
+def install_npm_packages(session: nox.Session, *pkg_args: str) -> None:
     """Install packages from npm."""
     session.run("npm", "install", "--silent", *pkg_args, external=True)
 
 
 @nox.session(tags=["format", "check"])
-def black(session: nox.session) -> None:
+def black(session: nox.Session) -> None:
     """Format python acording to PEP."""
     session.install("black")
     session.run("black", *format_dirs)
 
 
 @nox.session(tags=["format", "check"])
-def isort(session: nox.session) -> None:
+def isort(session: nox.Session) -> None:
     """Sort python imports correctly."""
     session.install("isort")
     session.run("isort", "--profile", "black", *format_dirs)
 
 
 @nox.session(tags=["docs"])
-def format_docs(session: nox.session):
+def format_docs(session: nox.Session):
     """Format mkdocs with prettier."""
     install_apt_packages(session, "nodejs", "npm")
     install_npm_packages(session, "--save-dev", "prettier")
@@ -97,7 +135,7 @@ def format_docs(session: nox.session):
 
 
 @nox.session(tags=["lint", "check"])
-def flake(session: nox.session) -> None:
+def flake(session: nox.Session) -> None:
     """Lint python and docstrings according to PEP."""
     session.install("flake8")
     session.install("flake8-docstrings")
@@ -116,7 +154,7 @@ def flake(session: nox.session) -> None:
 
 
 @nox.session(tags=["lint", "check"])
-def mypy(session: nox.session) -> None:
+def mypy(session: nox.Session) -> None:
     """Run python type checking with mypy."""
     import pathlib
 
@@ -131,7 +169,7 @@ def mypy(session: nox.session) -> None:
 
 
 @nox.session(tags=["docs"])
-def lint_docs(session: nox.session) -> None:
+def lint_docs(session: nox.Session):
     """Lint the docs according to markdownlint."""
     install_apt_packages(session, "nodejs", "npm")
     install_npm_packages(session, "markdownlint-cli")
@@ -143,7 +181,7 @@ def lint_docs(session: nox.session) -> None:
 
 
 @nox.session
-def clean(session: nox.session) -> None:
+def clean(session: nox.Session) -> None:
     """Remove all created files."""
     import os
     import shutil
@@ -177,7 +215,7 @@ def clean(session: nox.session) -> None:
 
 
 @nox.session(tags=["test", "check"])
-def test(session: nox.session) -> None:
+def test(session: nox.Session) -> None:
     """Run pytest (core tests only, no whisper/GPU deps needed)."""
     session.install("pytest")
     session.install("pytest-mock")

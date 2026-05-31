@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from argparse import Namespace
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from json import loads
 from pathlib import Path
@@ -9,6 +9,10 @@ from re import compile
 from subprocess import DEVNULL, PIPE, Popen, run
 from tempfile import NamedTemporaryFile
 from typing import Iterable, Optional
+from types import SimpleNamespace
+import wave
+
+import numpy as np
 
 from alive_progress import alive_bar
 
@@ -16,6 +20,7 @@ from .shotcut import Shotcut, format_time
 
 SILENCE_START = compile(r"silence_start:\s*(\d+(\.\d+)?)")
 SILENCE_END = compile(r"silence_end:\s*(\d+(\.\d+)?)")
+CHUNK_DURATION_S = 60
 
 
 @dataclass(frozen=True)
@@ -40,9 +45,16 @@ class WordBlock(SilenceBlock):
 
 
 @dataclass(frozen=True)
+class SentenceBlock(SilenceBlock):
+    text: str
+
+    def __str__(self):
+        return f'"{self.text}" ({super().__str__()})'
+
+@dataclass(frozen=True)
 class SpeechBlock(SilenceBlock):
     text: str
-    words: list[WordBlock]
+    words: list[WordBlock] = field(default_factory=list)
 
     def __str__(self):
         return (
@@ -148,12 +160,85 @@ def detect_silence(
     return silences
 
 
+def _transcribe_chunks(
+    audio: np.ndarray,
+    model,
+    sr: int = 16000,
+    extract_words: bool = False,
+    bar=None,
+) -> list[SpeechBlock] | list[SentenceBlock]:
+    import _pywhispercpp as pw
+
+    ctx = model._ctx
+    params = pw.whisper_full_default_params(
+        pw.whisper_sampling_strategy.WHISPER_SAMPLING_GREEDY,
+    )
+    params.print_progress = False
+    params.print_realtime = False
+    params.n_threads = 4
+    params.no_speech_thold = 0.4
+    params.temperature = 0.0
+    params.temperature_inc = 0.0
+    params.token_timestamps = extract_words
+    params.no_timestamps = False
+
+    chunk_len = CHUNK_DURATION_S * sr
+    n_chunks = (len(audio) + chunk_len - 1) // chunk_len
+
+    blocks: list[SpeechBlock | SentenceBlock] = []
+
+    for ci in range(n_chunks):
+        start = ci * chunk_len
+        end = min(start + chunk_len, len(audio))
+        chunk = audio[start:end]
+        if len(chunk) < sr:
+            continue
+
+        pw.whisper_full(ctx, params, chunk, len(chunk))
+        n_seg = pw.whisper_full_n_segments(ctx)
+        offset_ms = int(start / sr * 1000)
+
+        for i in range(n_seg):
+            t0 = pw.whisper_full_get_segment_t0(ctx, i)*10 + offset_ms
+            t1 = pw.whisper_full_get_segment_t1(ctx, i)*10 + offset_ms
+            text = pw.whisper_full_get_segment_text(ctx, i)
+
+            if extract_words:
+                n_tokens = pw.whisper_full_n_tokens(ctx, i)
+                words: list[WordBlock] = []
+                for j in range(n_tokens):
+                    token_text = pw.whisper_full_get_token_text(ctx, i, j)
+                    if token_text.startswith(b"[") and token_text.endswith(b"]"):
+                        continue
+                    p_data = pw.whisper_full_get_token_data(ctx, i, j)
+                    words.append(WordBlock(
+                        start=Decimal(((p_data.t0 + offset_ms) / 1000)),
+                        end=Decimal(((p_data.t1 + offset_ms) / 1000)),
+                        text=token_text.decode("utf-8", errors="replace").strip(),
+                    ))
+                blocks.append(SpeechBlock(
+                    start=Decimal(t0 / 1000),
+                    end=Decimal(t1 / 1000),
+                    text=text.decode("utf-8", errors="replace").strip(),
+                    words=words,
+                ))
+            else:
+                blocks.append(SentenceBlock(
+                    start=Decimal(t0 / 1000),
+                    end=Decimal(t1 / 1000),
+                    text=text.decode("utf-8", errors="replace").strip(),
+                ))
+
+            if bar is not None:
+                bar()
+
+    return blocks
+
+
 def detect_words(
     media: Path,
     channels: Optional[Iterable[int]] = None,
     model_name="tiny.en",
-    device: str = "cpu",
-    compute_type: str = "int8",
 ) -> list[SpeechBlock]:
     tmp_file = None
     try:
@@ -180,6 +265,8 @@ def detect_words(
                 "-i",
                 str(media.expanduser()),
                 *channel_filter,
+                "-ar",
+                "16000",
                 "-c:a",
                 "pcm_s16le",
                 str(tmp_file.name),
@@ -190,43 +277,108 @@ def detect_words(
         else:
             audio_path = media.expanduser()
 
-        from faster_whisper import WhisperModel
+        _preload_whisper_libs()
 
-        model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        from pywhispercpp.model import Model, ContextParams
 
-        segments, _ = model.transcribe(
-            str(audio_path),
-            beam_size=5,
-            word_timestamps=True,
-            vad_filter=True,
-        )
+        cp = ContextParams(use_gpu=_GPU, gpu_device=0, flash_attn=True)
+        model = Model(model_name, n_threads=4, context_params=cp)
 
-        result: list[SpeechBlock] = []
-        with alive_bar(title=f"Parsing {media.name} for speech") as bar:
-            for segment in segments:
-                result.append(
-                    SpeechBlock(
-                        start=Decimal(str(segment.start)),
-                        end=Decimal(str(segment.end)),
-                        text=segment.text.strip(),
-                        words=[
-                            WordBlock(
-                                start=Decimal(str(word.start)),
-                                end=Decimal(str(word.end)),
-                                text=word.word.strip(),
-                            )
-                            for word in (segment.words or [])
-                        ],
-                    )
-                )
-                bar()
+        with wave.open(str(audio_path), "rb") as wf:
+            raw = wf.readframes(wf.getnframes())
+            audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+            sr = wf.getframerate()
 
-        return result
+        with alive_bar(title=f"Transcribing {media.name}") as bar:
+            blocks = _transcribe_chunks(audio, model, sr=sr, extract_words=True, bar=bar)
+
+        return blocks
 
     finally:
         if tmp_file is not None:
             tmp_file.close()
             tmp_file.delete = True
+
+
+def _gpu_available() -> bool:
+    """Check if the Vulkan GPU backend is available."""
+    import importlib.util
+    spec = importlib.util.find_spec("pywhispercpp")
+    if not spec:
+        return False
+    site = Path(spec.origin).parent.parent
+    return (site / "libggml-vulkan.so.0").exists()
+
+
+def _preload_whisper_libs() -> None:
+    """Pre-load whisper.cpp shared libs whose RUNPATH points to stale build dirs."""
+    import ctypes, importlib.util
+    spec = importlib.util.find_spec("pywhispercpp")
+    if spec:
+        site = Path(spec.origin).parent.parent
+        for lib in ("libggml-base.so.0", "libggml-cpu.so.0",
+                    "libggml-vulkan.so.0", "libggml.so.0",
+                    "libwhisper.so.1"):
+            p = site / lib
+            if p.exists():
+                ctypes.CDLL(str(p), mode=ctypes.RTLD_GLOBAL)
+
+
+_GPU = _gpu_available()
+
+
+def _default_model() -> str:
+    return "large-v3-turbo" if _GPU else "tiny.en"
+
+
+def transcribe(args: Namespace) -> int:
+    """Transcribe a video/audio file to SRT captions."""
+    import sys
+    from tempfile import NamedTemporaryFile
+
+    media = args.media.expanduser()
+    model_name = args.model if args.model != "default" else _default_model()
+    output = args.output or media.with_suffix(".srt")
+
+    sys.stderr.write(f"Backend: {'GPU (Vulkan)' if _GPU else 'CPU'}  Model: {model_name}\n")
+
+    tmp = NamedTemporaryFile(suffix=".wav")
+    cmd = [
+        "ffmpeg", "-y", "-i", str(media),
+        "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(tmp.name),
+    ]
+    run(cmd, stderr=DEVNULL, stdout=DEVNULL, check=True)
+
+    _preload_whisper_libs()
+
+    from pywhispercpp.model import Model, ContextParams
+
+    sys.stderr.write("Loading model ...\n")
+    cp = ContextParams(use_gpu=_GPU, gpu_device=0, flash_attn=True)
+    model = Model(model_name, n_threads=4, context_params=cp)
+
+    sys.stderr.write("Transcribing ...\n")
+    with wave.open(str(tmp.name), "rb") as wf:
+        raw = wf.readframes(wf.getnframes())
+        audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        sr = wf.getframerate()
+
+    with alive_bar(unknown="waves", title="Transcribing") as bar:
+        entries = _transcribe_chunks(audio, model, sr=sr, extract_words=False, bar=bar)
+
+    output.write_text(_format_srt(entries), encoding="utf-8")
+    sys.stderr.write(f"Wrote {output} ({len(entries)} segments)\n")
+    return 0
+
+
+def _format_srt(segments: list[SpeechBlock] | list[SentenceBlock]) -> str:
+    lines: list[str] = []
+    for i, seg in enumerate(segments, 1):
+        lines.append(str(i))
+        lines.append(f"{format_time(seg.start)} --> {format_time(seg.end)}")
+        lines.append(seg.text.strip())
+        lines.append("")
+    return "\n".join(lines)
 
 
 FILLER_WORDS = frozenset({
@@ -421,7 +573,9 @@ def silence_removal(args: Namespace) -> int:
         filler_set.update(w.strip().lower() for w in args.filler_words.split(","))
 
     padding = Decimal(str(getattr(args, "padding", "0.1")))
-    model = getattr(args, "model", "tiny.en")
+    model = getattr(args, "model", "default")
+    if model == "default":
+        model = _default_model()
 
     media_silences = _media_silence_regions(
         sc, track_indices, channels, threshold_db, min_silence, max_silence

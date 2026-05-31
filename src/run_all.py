@@ -1,10 +1,14 @@
+from __future__ import annotations
+
+import importlib
 from argparse import ArgumentParser, Namespace, _SubParsersAction
 from logging import getLogger
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
-from .calendar_automation import calendar_automation
-from .playlist_automation import playlist_automation
-from .youtube import YouTube
+if TYPE_CHECKING:
+    from .calendar_automation import calendar_automation
+    from .playlist_automation import playlist_automation
+    from .youtube import YouTube
 
 LOG = getLogger("combined")
 
@@ -40,6 +44,9 @@ def add_combined(
 
 def run_all(args: Namespace, yt: YouTube) -> int:
     """Entrypoint for running all of the external resource entrypoints."""
+    from .calendar_automation import calendar_automation
+    from .playlist_automation import playlist_automation
+
     LOG.info("Running calendar entrypoint")
     if calendar_automation(args=args, yt=yt):
         return 1
