@@ -9,7 +9,14 @@ from xml.etree.ElementTree import parse
 
 import pytest
 
-from src.background_music import Song, background_music, find_song_locations, find_songs, insert_songs, pack_bin
+from src.background_music import (
+    Song,
+    background_music,
+    find_song_locations,
+    find_songs,
+    insert_songs,
+    pack_bin,
+)
 from src.shotcut import Marker, Shotcut, format_time, str_to_timedelta, timedelta_to_str
 
 TEST_MLT = Path("tests/filter_test.mlt")
@@ -61,7 +68,10 @@ def test_find_markers_no_markers_returns_full_timeline(shotcut: Shotcut) -> None
 
 def test_find_markers_odd_count_appends_end(shotcut: Shotcut) -> None:
     from decimal import Decimal
-    shotcut.timeline.markers[0] = Marker(index=0, text="a", colour="#f00", time=Decimal(30))
+
+    shotcut.timeline.markers[0] = Marker(
+        index=0, text="a", colour="#f00", time=Decimal(30)
+    )
     markers = shotcut.find_markers()
     assert len(markers) == 1
     assert markers[0][0] == Decimal(30)
@@ -91,32 +101,55 @@ def test_timedelta_to_str_roundtrip() -> None:
     ]
     for td in cases:
         result = str_to_timedelta(timedelta_to_str(td))
-        assert abs((result - td).total_seconds()) < 0.001, f"Failed for {td}: got {result}"
+        assert (
+            abs((result - td).total_seconds()) < 0.001
+        ), f"Failed for {td}: got {result}"
 
 
 def test_pack_bin_fits_songs() -> None:
     songs = [
-        Song(id=i, name=f"song{i}", length=timedelta(seconds=30), path=Path(), properties={})
+        Song(
+            id=i,
+            name=f"song{i}",
+            length=timedelta(seconds=30),
+            path=Path(),
+            properties={},
+        )
         for i in range(3)
     ]
-    placed, remaining = pack_bin(timedelta(minutes=2), songs, timedelta(0), timedelta(5))
+    placed, remaining = pack_bin(
+        timedelta(minutes=2), songs, timedelta(0), timedelta(5)
+    )
     assert len(placed) > 0
     assert remaining >= timedelta(0)
 
 
 def test_pack_bin_respects_gap() -> None:
     songs = [
-        Song(id=i, name=f"song{i}", length=timedelta(seconds=60), path=Path(), properties={})
+        Song(
+            id=i,
+            name=f"song{i}",
+            length=timedelta(seconds=60),
+            path=Path(),
+            properties={},
+        )
         for i in range(2)
     ]
-    placed, remaining = pack_bin(timedelta(seconds=125), songs, timedelta(seconds=5), timedelta(seconds=5))
+    placed, remaining = pack_bin(
+        timedelta(seconds=125), songs, timedelta(seconds=5), timedelta(seconds=5)
+    )
     assert len(placed) == 2
 
 
 def test_shotcut_add_clip_to_track(shotcut: Shotcut) -> None:
     track = shotcut.timeline.main_video
     n_before = len(track.clips)
-    shotcut.add_clip_to_track(track, bin_asset_id=0, start=shotcut.timeline.duration, duration=shotcut.framerate)
+    shotcut.add_clip_to_track(
+        track,
+        bin_asset_id=0,
+        start=shotcut.timeline.duration,
+        duration=shotcut.framerate,
+    )
     assert len(track.clips) == n_before + 1
 
 
@@ -143,11 +176,19 @@ def test_load_project_roundtrip(tmp_path: Path, shotcut: Shotcut) -> None:
 
 
 def test_background_music_pipeline(tmp_path: Path, shotcut: Shotcut) -> None:
-    unused_id = next(i for i in shotcut.assets if i not in
-                     {c.bin_asset_id for c in shotcut.timeline.main_video.clips.values()})
+    unused_id = next(
+        i
+        for i in shotcut.assets
+        if i not in {c.bin_asset_id for c in shotcut.timeline.main_video.clips.values()}
+    )
     songs = [
-        Song(id=unused_id, name="test", length=timedelta(seconds=2),
-             path=Path(), properties={}),
+        Song(
+            id=unused_id,
+            name="test",
+            length=timedelta(seconds=2),
+            path=Path(),
+            properties={},
+        ),
     ]
     track = shotcut.timeline.main_video
 
@@ -164,7 +205,8 @@ def test_background_music_pipeline(tmp_path: Path, shotcut: Shotcut) -> None:
 
     for start, song in writable:
         shotcut.add_clip_to_track(
-            track, bin_asset_id=song.id,
+            track,
+            bin_asset_id=song.id,
             start=Decimal(str(start.total_seconds())),
             duration=Decimal(str(song.length.total_seconds())),
             source_in=Decimal(0),
@@ -172,7 +214,8 @@ def test_background_music_pipeline(tmp_path: Path, shotcut: Shotcut) -> None:
     assert len(track.clips) == len(writable)
 
     shotcut.add_filter_to_track(
-        track, filter_id="filter0",
+        track,
+        filter_id="filter0",
         length=format_time(shotcut.timeline.duration),
         properties={"mlt_service": "volume", "level": "-3dB"},
     )
@@ -189,9 +232,9 @@ def test_background_music_pipeline(tmp_path: Path, shotcut: Shotcut) -> None:
 
 def _make_synthetic_project(tmp_path: Path) -> tuple[Path, Path]:
     """Create a minimal Shotcut project with known short assets for testing."""
-    from xml.etree.ElementTree import Element, ElementTree, indent, SubElement
-    import wave
     import struct
+    import wave
+    from xml.etree.ElementTree import Element, ElementTree, SubElement, indent
 
     audio_file = tmp_path / "test_audio.wav"
     with wave.open(str(audio_file), "w") as wf:
@@ -203,15 +246,36 @@ def _make_synthetic_project(tmp_path: Path) -> tuple[Path, Path]:
 
     mlt_file = tmp_path / "test.mlt"
     root = Element("mlt", {"title": "Shotcut test", "producer": "main_bin"})
-    SubElement(root, "profile", {
-        "frame_rate_num": "30", "frame_rate_den": "1",
-        "width": "1920", "height": "1080",
-        "display_aspect_num": "16", "display_aspect_den": "9",
-        "sample_aspect_num": "1", "sample_aspect_den": "1",
-        "progressive": "1",
-    })
-    tractor = SubElement(root, "tractor", {"id": "tractor0", "title": "test", "in": "00:00:00.000", "out": "00:00:10.000"})
-    for prop in [("shotcut", "1"), ("shotcut:projectAudioChannels", "2"), ("shotcut:projectFolder", "1")]:
+    SubElement(
+        root,
+        "profile",
+        {
+            "frame_rate_num": "30",
+            "frame_rate_den": "1",
+            "width": "1920",
+            "height": "1080",
+            "display_aspect_num": "16",
+            "display_aspect_den": "9",
+            "sample_aspect_num": "1",
+            "sample_aspect_den": "1",
+            "progressive": "1",
+        },
+    )
+    tractor = SubElement(
+        root,
+        "tractor",
+        {
+            "id": "tractor0",
+            "title": "test",
+            "in": "00:00:00.000",
+            "out": "00:00:10.000",
+        },
+    )
+    for prop in [
+        ("shotcut", "1"),
+        ("shotcut:projectAudioChannels", "2"),
+        ("shotcut:projectFolder", "1"),
+    ]:
         SubElement(tractor, "property", {"name": prop[0]}).text = prop[1]
     SubElement(tractor, "track", {"producer": "playlist0"})
 
@@ -219,24 +283,44 @@ def _make_synthetic_project(tmp_path: Path) -> tuple[Path, Path]:
     SubElement(consumer, "property", {"name": "mlt_service"}).text = "sdl2_audio"
 
     chain = SubElement(root, "chain", {"id": "chain0", "out": "00:00:05.000"})
-    for name, val in [("length", "00:00:05.000"), ("resource", str(audio_file)),
-                       ("mlt_service", "avformat")]:
+    for name, val in [
+        ("length", "00:00:05.000"),
+        ("resource", str(audio_file)),
+        ("mlt_service", "avformat"),
+    ]:
         SubElement(chain, "property", {"name": name}).text = val
 
     main_bin = SubElement(root, "playlist", {"id": "main_bin"})
-    for name in ("shotcut:projectAudioChannels", "shotcut:projectFolder", "shotcut:processingMode", "shotcut:skipConvert"):
+    for name in (
+        "shotcut:projectAudioChannels",
+        "shotcut:projectFolder",
+        "shotcut:processingMode",
+        "shotcut:skipConvert",
+    ):
         SubElement(main_bin, "property", {"name": name}).text = "1"
 
     playlist = SubElement(root, "playlist", {"id": "playlist0"})
     SubElement(playlist, "property", {"name": "shotcut:name"}).text = "V1"
     SubElement(playlist, "blank", {"length": "00:00:02.000"})
-    SubElement(playlist, "entry", {"producer": "chain0", "in": "00:00:00.000", "out": "00:00:03.000"})
+    SubElement(
+        playlist,
+        "entry",
+        {"producer": "chain0", "in": "00:00:00.000", "out": "00:00:03.000"},
+    )
     SubElement(playlist, "blank", {"length": "00:00:02.000"})
-    SubElement(playlist, "entry", {"producer": "chain0", "in": "00:00:00.000", "out": "00:00:03.000"})
+    SubElement(
+        playlist,
+        "entry",
+        {"producer": "chain0", "in": "00:00:00.000", "out": "00:00:03.000"},
+    )
 
     props = SubElement(tractor, "properties", {"name": "shotcut:markers"})
-    SubElement(props, "property", {"name": "0"}).text = json.dumps({"start": "00:00:02.000", "text": "gap", "color": "#ff0000"})
-    SubElement(props, "property", {"name": "1"}).text = json.dumps({"start": "00:00:04.000", "text": "end", "color": "#00ff00"})
+    SubElement(props, "property", {"name": "0"}).text = json.dumps(
+        {"start": "00:00:02.000", "text": "gap", "color": "#ff0000"}
+    )
+    SubElement(props, "property", {"name": "1"}).text = json.dumps(
+        {"start": "00:00:04.000", "text": "end", "color": "#00ff00"}
+    )
 
     indent(root)
     tree = ElementTree(root)
@@ -246,6 +330,7 @@ def _make_synthetic_project(tmp_path: Path) -> tuple[Path, Path]:
 
 def test_background_music_entrypoint_returns_0(tmp_path: Path) -> None:
     import json
+
     mlt_file, audio_file = _make_synthetic_project(tmp_path)
     args = Namespace(
         project=mlt_file,
@@ -264,6 +349,7 @@ def test_background_music_entrypoint_returns_0(tmp_path: Path) -> None:
 
 def test_background_music_entrypoint_dry_run_does_not_save(tmp_path: Path) -> None:
     import json
+
     mlt_file, audio_file = _make_synthetic_project(tmp_path)
     old_mtime = mlt_file.stat().st_mtime
 

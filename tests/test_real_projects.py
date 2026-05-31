@@ -59,7 +59,9 @@ def test_project_consecutive_saves_match(tmp_path: Path, project_path: Path) -> 
     out2 = tmp_path / "save2.mlt"
     sc.save(out1)
     sc.save(out2)
-    assert out1.read_bytes() == out2.read_bytes(), f"Consecutive saves differ for {project_path}"
+    assert (
+        out1.read_bytes() == out2.read_bytes()
+    ), f"Consecutive saves differ for {project_path}"
 
 
 @pytest.mark.slow
@@ -78,11 +80,13 @@ def test_project_roundtrip_idempotent(tmp_path: Path, project_path: Path) -> Non
     sc3 = Shotcut(gen1)
     gen2 = tmp_path / "gen2.mlt"
     sc3.save(gen2)
-    assert gen1.read_bytes() == gen2.read_bytes(), \
-        f"Save not idempotent for {project_path}"
+    assert (
+        gen1.read_bytes() == gen2.read_bytes()
+    ), f"Save not idempotent for {project_path}"
 
     sc4 = Shotcut(gen2)
     gen3 = tmp_path / "gen3.mlt"
     sc4.save(gen3)
-    assert gen2.read_bytes() == gen3.read_bytes(), \
-        f"Third save diverged for {project_path}"
+    assert (
+        gen2.read_bytes() == gen3.read_bytes()
+    ), f"Third save diverged for {project_path}"

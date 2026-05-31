@@ -46,7 +46,9 @@ class Filter:
         self.mlt_service = mlt_service
 
     def to_xml(self, duration: Decimal) -> Element:
-        elem = Element("filter", {"id": f"filter{self.index}", "out": format_time(duration)})
+        elem = Element(
+            "filter", {"id": f"filter{self.index}", "out": format_time(duration)}
+        )
         SubElement(elem, "property", {"name": "mlt_service"}).text = self.mlt_service
         for name, value in self._property_spec.items():
             val = value(self) if callable(value) else value
@@ -90,7 +92,9 @@ class Brightness(Filter):
 
 
 class ColourGrading(Filter):
-    def __init__(self, index: int, shadows: rgb_diff, midtones: rgb_diff, gain: rgb_diff):
+    def __init__(
+        self, index: int, shadows: rgb_diff, midtones: rgb_diff, gain: rgb_diff
+    ):
         super().__init__(index, "lift_gamma_gain")
         self.shadows = shadows
         self.midtones = midtones
@@ -126,7 +130,9 @@ class ColourGrading(Filter):
             g=clamp(_property(elem, "gain_g", 0.0), -1, 1),
             b=clamp(_property(elem, "gain_b", 0.0), -1, 1),
         )
-        return ColourGrading(int(elem.attrib["id"].removeprefix("filter")), shadows, midtones, gain)
+        return ColourGrading(
+            int(elem.attrib["id"].removeprefix("filter")), shadows, midtones, gain
+        )
 
 
 class Contrast(Filter):
@@ -157,7 +163,12 @@ _AUDIO_BASE = {"window": "75", "max_gain": "20dB", "channel_mask": "-1"}
 
 
 class FadeInAudio(Filter):
-    def __init__(self, index: int, duration: Decimal, type: Literal["natural", "s-curve", "fast-slow", "slow-fast"]):
+    def __init__(
+        self,
+        index: int,
+        duration: Decimal,
+        type: Literal["natural", "s-curve", "fast-slow", "slow-fast"],
+    ):
         super().__init__(index, "volume")
         self.duration = duration
         self.type = type
@@ -177,14 +188,18 @@ class FadeInAudio(Filter):
         level_text += f"=-60;{format_time(self.duration - Decimal(1) / Decimal(60))}=0"
         SubElement(elem, "property", {"name": "level"}).text = level_text
         SubElement(elem, "property", {"name": "shotcut:filter"}).text = "fadeInVolume"
-        SubElement(elem, "property", {"name": "shotcut:animIn"}).text = format_time(self.duration)
+        SubElement(elem, "property", {"name": "shotcut:animIn"}).text = format_time(
+            self.duration
+        )
         for name, val in _AUDIO_BASE.items():
             SubElement(elem, "property", {"name": name}).text = val
         return elem
 
     @classmethod
     def from_xml(cls: type[T], elem: Element) -> T:
-        start, _ = _property(elem, "level", "00:00:00.000=-60;00:00:00.000=0").split(";", 1)
+        start, _ = _property(elem, "level", "00:00:00.000=-60;00:00:00.000=0").split(
+            ";", 1
+        )
         match start.split("=")[0][-1]:
             case "l":
                 level = "s-curve"
@@ -194,18 +209,29 @@ class FadeInAudio(Filter):
                 level = "slow-fast"
             case _:
                 level = "natural"
-        return cls(int(elem.attrib["id"].removeprefix("filter")), parse_time(_property(elem, "shotcut:animIn", "00:00:01.000")), level)
+        return cls(
+            int(elem.attrib["id"].removeprefix("filter")),
+            parse_time(_property(elem, "shotcut:animIn", "00:00:01.000")),
+            level,
+        )
 
 
 class FadeOutAudio(Filter):
-    def __init__(self, index: int, duration: Decimal, type: Literal["natural", "s-curve", "fast-slow", "slow-fast"]):
+    def __init__(
+        self,
+        index: int,
+        duration: Decimal,
+        type: Literal["natural", "s-curve", "fast-slow", "slow-fast"],
+    ):
         super().__init__(index, "volume")
         self.duration = duration
         self.type = type
 
     def to_xml(self, clip_duration: Decimal) -> Element:
         elem = super().to_xml(clip_duration)
-        level_text = format_time(clip_duration - self.duration + Decimal(1) / Decimal(60))
+        level_text = format_time(
+            clip_duration - self.duration + Decimal(1) / Decimal(60)
+        )
         match self.type:
             case "natural":
                 pass
@@ -218,14 +244,18 @@ class FadeOutAudio(Filter):
         level_text += f"=0;{format_time(clip_duration)}=-60"
         SubElement(elem, "property", {"name": "level"}).text = level_text
         SubElement(elem, "property", {"name": "shotcut:filter"}).text = "fadeOutVolume"
-        SubElement(elem, "property", {"name": "shotcut:animOut"}).text = format_time(self.duration)
+        SubElement(elem, "property", {"name": "shotcut:animOut"}).text = format_time(
+            self.duration
+        )
         for name, val in _AUDIO_BASE.items():
             SubElement(elem, "property", {"name": name}).text = val
         return elem
 
     @classmethod
     def from_xml(cls: type[T], elem: Element) -> T:
-        start, _ = _property(elem, "level", "00:00:00.000=0;00:00:00.000=-60").split(";", 1)
+        start, _ = _property(elem, "level", "00:00:00.000=0;00:00:00.000=-60").split(
+            ";", 1
+        )
         match start.split("=")[0][-1]:
             case "l":
                 level = "s-curve"
@@ -235,7 +265,11 @@ class FadeOutAudio(Filter):
                 level = "slow-fast"
             case _:
                 level = "natural"
-        return cls(int(elem.attrib["id"].removeprefix("filter")), parse_time(_property(elem, "shotcut:animOut", "00:00:01.000")), level)
+        return cls(
+            int(elem.attrib["id"].removeprefix("filter")),
+            parse_time(_property(elem, "shotcut:animOut", "00:00:01.000")),
+            level,
+        )
 
 
 class Gain(Filter):
@@ -253,7 +287,10 @@ class Gain(Filter):
 
     @classmethod
     def from_xml(cls: type[T], elem: Element) -> T:
-        return cls(int(elem.attrib["id"].removeprefix("filter")), float(_property(elem, "level", "0")))
+        return cls(
+            int(elem.attrib["id"].removeprefix("filter")),
+            float(_property(elem, "level", "0")),
+        )
 
 
 class Mute(Filter):
@@ -287,13 +324,20 @@ class FadeInVideo(Filter):
     def to_xml(self, clip_duration: Decimal) -> Element:
         elem = super().to_xml(clip_duration)
         anim_end = format_time(self.duration - Decimal(1) / Decimal(60))
-        SubElement(elem, "property", {"name": "level"}).text = f"00:00:00.000=0;{anim_end}=1"
-        SubElement(elem, "property", {"name": "shotcut:animIn"}).text = format_time(self.duration)
+        SubElement(elem, "property", {"name": "level"}).text = (
+            f"00:00:00.000=0;{anim_end}=1"
+        )
+        SubElement(elem, "property", {"name": "shotcut:animIn"}).text = format_time(
+            self.duration
+        )
         return elem
 
     @classmethod
     def from_xml(cls: type[T], elem: Element) -> T:
-        return cls(int(elem.attrib["id"].removeprefix("filter")), parse_time(_property(elem, "shotcut:animIn", "00:00:01.000")))
+        return cls(
+            int(elem.attrib["id"].removeprefix("filter")),
+            parse_time(_property(elem, "shotcut:animIn", "00:00:01.000")),
+        )
 
 
 class FadeOutVideo(Filter):
@@ -309,14 +353,23 @@ class FadeOutVideo(Filter):
 
     def to_xml(self, clip_duration: Decimal) -> Element:
         elem = super().to_xml(clip_duration)
-        anim_start = format_time(clip_duration - self.duration + Decimal(1) / Decimal(60))
-        SubElement(elem, "property", {"name": "level"}).text = f"{anim_start}=1;{format_time(clip_duration)}=0"
-        SubElement(elem, "property", {"name": "shotcut:animOut"}).text = format_time(self.duration)
+        anim_start = format_time(
+            clip_duration - self.duration + Decimal(1) / Decimal(60)
+        )
+        SubElement(elem, "property", {"name": "level"}).text = (
+            f"{anim_start}=1;{format_time(clip_duration)}=0"
+        )
+        SubElement(elem, "property", {"name": "shotcut:animOut"}).text = format_time(
+            self.duration
+        )
         return elem
 
     @classmethod
     def from_xml(cls: type[T], elem: Element) -> T:
-        return cls(int(elem.attrib["id"].removeprefix("filter")), parse_time(_property(elem, "shotcut:animOut", "00:00:01.000")))
+        return cls(
+            int(elem.attrib["id"].removeprefix("filter")),
+            parse_time(_property(elem, "shotcut:animOut", "00:00:01.000")),
+        )
 
 
 class Opacity(Filter):
@@ -337,11 +390,21 @@ class Opacity(Filter):
 
     @classmethod
     def from_xml(cls: type[T], elem: Element) -> T:
-        return cls(int(elem.attrib["id"].removeprefix("filter")), float(_property(elem, "opacity", "1.0")))
+        return cls(
+            int(elem.attrib["id"].removeprefix("filter")),
+            float(_property(elem, "opacity", "1.0")),
+        )
 
 
 class SizePositionRotate(Filter):
-    def __init__(self, index: int, rect: tuple[int, int, int, int] = (0, 0, 1920, 1080), background: str = "#00000000", halign: str = "center", valign: str = "middle"):
+    def __init__(
+        self,
+        index: int,
+        rect: tuple[int, int, int, int] = (0, 0, 1920, 1080),
+        background: str = "#00000000",
+        halign: str = "center",
+        valign: str = "middle",
+    ):
         super().__init__(index, "affine")
         self.rect = rect
         self.background = background
@@ -372,7 +435,11 @@ class SizePositionRotate(Filter):
 
     @property
     def _background_str(self) -> str:
-        return f"color:{self.background}" if not self.background.startswith("color:") else self.background
+        return (
+            f"color:{self.background}"
+            if not self.background.startswith("color:")
+            else self.background
+        )
 
     @classmethod
     def from_xml(cls: type[T], elem: Element) -> T:
@@ -392,33 +459,52 @@ class SizePositionRotate(Filter):
 
 
 _TEXT_BASE = {
-    "family": "Sans", "size": "48", "weight": "400",
-    "style": "normal", "fgcolour": "0x000000ff",
-    "bgcolour": "#00000000", "olcolour": "0x00000000",
-    "pad": "0", "halign": "left", "valign": "top",
-    "outline": "0", "pixel_ratio": "1", "opacity": "1",
+    "family": "Sans",
+    "size": "48",
+    "weight": "400",
+    "style": "normal",
+    "fgcolour": "0x000000ff",
+    "bgcolour": "#00000000",
+    "olcolour": "0x00000000",
+    "pad": "0",
+    "halign": "left",
+    "valign": "top",
+    "outline": "0",
+    "pixel_ratio": "1",
+    "opacity": "1",
     "typewriter": "0",
-    "typewriter.step_length": "25", "typewriter.step_sigma": "0",
-    "typewriter.random_seed": "0", "typewriter.macro_type": "1",
-    "typewriter.cursor": "1", "typewriter.cursor_blink_rate": "25",
+    "typewriter.step_length": "25",
+    "typewriter.step_sigma": "0",
+    "typewriter.random_seed": "0",
+    "typewriter.macro_type": "1",
+    "typewriter.cursor": "1",
+    "typewriter.cursor_blink_rate": "25",
     "typewriter.cursor_char": "|",
-    "shotcut:animIn": "00:00:00.000", "shotcut:animOut": "00:00:00.000",
+    "shotcut:animIn": "00:00:00.000",
+    "shotcut:animOut": "00:00:00.000",
 }
 
 
 class RichText(Filter):
-    def __init__(self, index: int, html: str = "", geometry: tuple[int, int, int, int] = (192, 108, 1536, 864)):
+    def __init__(
+        self,
+        index: int,
+        html: str = "",
+        geometry: tuple[int, int, int, int] = (192, 108, 1536, 864),
+    ):
         super().__init__(index, "qtext")
         self.html = html
         self.geometry = geometry
 
     _property_spec = dict(_TEXT_BASE)
-    _property_spec.update({
-        "argument": "",
-        "shotcut:filter": "richText",
-        "geometry": lambda self: f"{self.geometry[0]} {self.geometry[1]} {self.geometry[2]} {self.geometry[3]} 1",
-        "html": lambda self: self.html,
-    })
+    _property_spec.update(
+        {
+            "argument": "",
+            "shotcut:filter": "richText",
+            "geometry": lambda self: f"{self.geometry[0]} {self.geometry[1]} {self.geometry[2]} {self.geometry[3]} 1",
+            "html": lambda self: self.html,
+        }
+    )
 
     @classmethod
     def from_xml(cls: type[T], elem: Element) -> T:
@@ -433,7 +519,14 @@ class RichText(Filter):
 
 
 class Typewriter(Filter):
-    def __init__(self, index: int, text: str = "", geometry: tuple[int, int, int, int] = (0, 0, 1920, 1080), step_length: int = 8, step_sigma: int = 2):
+    def __init__(
+        self,
+        index: int,
+        text: str = "",
+        geometry: tuple[int, int, int, int] = (0, 0, 1920, 1080),
+        step_length: int = 8,
+        step_sigma: int = 2,
+    ):
         super().__init__(index, "qtext")
         self.text = text
         self.geometry = geometry
@@ -441,18 +534,30 @@ class Typewriter(Filter):
         self.step_sigma = step_sigma
 
     _property_spec = {
-        "family": "monospace", "size": "76", "weight": "400",
-        "style": "normal", "fgcolour": "#ff00ff00",
-        "bgcolour": "#00000000", "olcolour": "#aa000000",
-        "pad": "0", "halign": "center", "valign": "middle",
-        "outline": "0", "pixel_ratio": "1", "opacity": "1",
+        "family": "monospace",
+        "size": "76",
+        "weight": "400",
+        "style": "normal",
+        "fgcolour": "#ff00ff00",
+        "bgcolour": "#00000000",
+        "olcolour": "#aa000000",
+        "pad": "0",
+        "halign": "center",
+        "valign": "middle",
+        "outline": "0",
+        "pixel_ratio": "1",
+        "opacity": "1",
         "typewriter": "1",
-        "typewriter.random_seed": "0", "typewriter.macro_type": "1",
-        "typewriter.cursor": "1", "typewriter.cursor_blink_rate": "25",
+        "typewriter.random_seed": "0",
+        "typewriter.macro_type": "1",
+        "typewriter.cursor": "1",
+        "typewriter.cursor_blink_rate": "25",
         "typewriter.cursor_char": "|",
-        "shotcut:animIn": "00:00:00.000", "shotcut:animOut": "00:00:00.000",
+        "shotcut:animIn": "00:00:00.000",
+        "shotcut:animOut": "00:00:00.000",
         "shotcut:filter": "typewriter",
-        "shotcut:usePointSize": "1", "shotcut:pointSize": "57",
+        "shotcut:usePointSize": "1",
+        "shotcut:pointSize": "57",
         "argument": lambda self: self.text,
         "geometry": lambda self: f"{self.geometry[0]} {self.geometry[1]} {self.geometry[2]} {self.geometry[3]} 1",
         "typewriter.step_length": lambda self: str(self.step_length),
@@ -474,7 +579,16 @@ class Typewriter(Filter):
 
 
 class Timer(Filter):
-    def __init__(self, index: int, format: str = "SS.SS", start: str = "00:00:00.000", duration: str = "00:00:10.000", speed: float = 1.0, direction: str = "up", geometry: tuple[int, int, int, int] = (0, 0, 1920, 1080)):
+    def __init__(
+        self,
+        index: int,
+        format: str = "SS.SS",
+        start: str = "00:00:00.000",
+        duration: str = "00:00:10.000",
+        speed: float = 1.0,
+        direction: str = "up",
+        geometry: tuple[int, int, int, int] = (0, 0, 1920, 1080),
+    ):
         super().__init__(index, "timer")
         self.format = format
         self.start = start
@@ -484,11 +598,18 @@ class Timer(Filter):
         self.geometry = geometry
 
     _property_spec = {
-        "family": "Sans", "size": "1080", "weight": "400",
-        "style": "normal", "fgcolour": "#ffffffff",
-        "bgcolour": "#00000000", "olcolour": "#ff000000",
-        "pad": "0", "halign": "right", "valign": "bottom",
-        "outline": "0", "opacity": "1.0",
+        "family": "Sans",
+        "size": "1080",
+        "weight": "400",
+        "style": "normal",
+        "fgcolour": "#ffffffff",
+        "bgcolour": "#00000000",
+        "olcolour": "#ff000000",
+        "pad": "0",
+        "halign": "right",
+        "valign": "bottom",
+        "outline": "0",
+        "opacity": "1.0",
         "shotcut:filter": "timer",
         "shotcut:usePointSize": "0",
         "offset": "00:00:00.000",

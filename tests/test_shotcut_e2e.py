@@ -35,7 +35,14 @@ def _xml_structure(path: Path) -> dict:
     return {
         "profile": {
             k: root.find("profile").attrib.get(k)
-            for k in ("frame_rate_num", "frame_rate_den", "height", "width", "display_aspect_num", "display_aspect_den")
+            for k in (
+                "frame_rate_num",
+                "frame_rate_den",
+                "height",
+                "width",
+                "display_aspect_num",
+                "display_aspect_den",
+            )
         },
         "chain_count": len(chains),
         "playlist_count": len(playlists),
@@ -66,27 +73,35 @@ class TestRoundTrip:
         for idx in p1._tracks:
             t1 = p1._tracks[idx]
             t2 = p2._tracks[idx]
-            assert len(t1.clips) == len(t2.clips), \
-                f"{label} track {idx}: clip count {len(t1.clips)} != {len(t2.clips)}"
-            assert len(t1.transitions) == len(t2.transitions), \
-                f"{label} track {idx}: transition count {len(t1.transitions)} != {len(t2.transitions)}"
+            assert len(t1.clips) == len(
+                t2.clips
+            ), f"{label} track {idx}: clip count {len(t1.clips)} != {len(t2.clips)}"
+            assert len(t1.transitions) == len(
+                t2.transitions
+            ), f"{label} track {idx}: transition count {len(t1.transitions)} != {len(t2.transitions)}"
 
-    @pytest.mark.parametrize("mlt_path,label", [
-        (FILTER_TEST, "filter_test"),
-        (TEST_MLT, "test"),
-        (RETEST_MLT, "retest"),
-    ])
+    @pytest.mark.parametrize(
+        "mlt_path,label",
+        [
+            (FILTER_TEST, "filter_test"),
+            (TEST_MLT, "test"),
+            (RETEST_MLT, "retest"),
+        ],
+    )
     def test_model_preserved(self, mlt_path: Path, label: str, tmp_path: Path):
         p = Shotcut(mlt_path)
         saved = _roundtrip(p, tmp_path)
         p2 = Shotcut(saved)
         self._check_model(p, p2, label)
 
-    @pytest.mark.parametrize("mlt_path,label", [
-        (FILTER_TEST, "filter_test"),
-        (TEST_MLT, "test"),
-        (RETEST_MLT, "retest"),
-    ])
+    @pytest.mark.parametrize(
+        "mlt_path,label",
+        [
+            (FILTER_TEST, "filter_test"),
+            (TEST_MLT, "test"),
+            (RETEST_MLT, "retest"),
+        ],
+    )
     def test_profile_preserved(self, mlt_path: Path, label: str, tmp_path: Path):
         p = Shotcut(mlt_path)
         saved = _roundtrip(p, tmp_path)
@@ -94,21 +109,27 @@ class TestRoundTrip:
         for attr in ("framerate", "height", "width"):
             assert getattr(p, attr) == getattr(p2, attr), f"{label}: {attr} changed"
 
-    @pytest.mark.parametrize("mlt_path,label", [
-        (FILTER_TEST, "filter_test"),
-        (TEST_MLT, "test"),
-        (RETEST_MLT, "retest"),
-    ])
+    @pytest.mark.parametrize(
+        "mlt_path,label",
+        [
+            (FILTER_TEST, "filter_test"),
+            (TEST_MLT, "test"),
+            (RETEST_MLT, "retest"),
+        ],
+    )
     def test_tracks_preserved(self, mlt_path: Path, label: str, tmp_path: Path):
         p = Shotcut(mlt_path)
         saved = _roundtrip(p, tmp_path)
         p2 = Shotcut(saved)
         assert len(p._tracks) == len(p2._tracks)
 
-    @pytest.mark.parametrize("mlt_path,label", [
-        (FILTER_TEST, "filter_test"),
-        (TEST_MLT, "test"),
-    ])
+    @pytest.mark.parametrize(
+        "mlt_path,label",
+        [
+            (FILTER_TEST, "filter_test"),
+            (TEST_MLT, "test"),
+        ],
+    )
     def test_clip_counts_preserved(self, mlt_path: Path, label: str, tmp_path: Path):
         p = Shotcut(mlt_path)
         saved = _roundtrip(p, tmp_path)
@@ -117,7 +138,9 @@ class TestRoundTrip:
             t1 = p._tracks[idx]
             t2 = p2._tracks[idx]
             assert len(t1.clips) == len(t2.clips), f"Track {idx} clip count mismatch"
-            assert len(t1.transitions) == len(t2.transitions), f"Track {idx} transition count mismatch"
+            assert len(t1.transitions) == len(
+                t2.transitions
+            ), f"Track {idx} transition count mismatch"
 
     def test_assets_preserved(self, tmp_path: Path):
         p = Shotcut(FILTER_TEST)
@@ -143,6 +166,7 @@ class TestRoundTrip:
 # ===========================================================================
 # Basic load / model tests
 # ===========================================================================
+
 
 class TestLoad:
     def test_load_filter_test(self):
@@ -192,6 +216,7 @@ class TestLoad:
 # Operation tests
 # ===========================================================================
 
+
 class TestRemoveTime:
     def test_remove_zero_no_effect(self):
         p = Shotcut(FILTER_TEST)
@@ -201,7 +226,9 @@ class TestRemoveTime:
         starts_before = {c.index: c.start for c in track.clips.values()}
         p.remove_time(track, Decimal(0))
         for c in track.clips.values():
-            assert c.start == starts_before[c.index], f"Clip {c.index} start changed after zero remove"
+            assert (
+                c.start == starts_before[c.index]
+            ), f"Clip {c.index} start changed after zero remove"
 
 
 class TestCondenseClips:
@@ -221,7 +248,9 @@ class TestCondenseClips:
         starts_before = {c.index: c.start for c in track.clips.values()}
         p.condense_clips(track)
         for c in track.clips.values():
-            assert c.start == starts_before[c.index], f"Clip {c.index} start changed after condense on no-gap track"
+            assert (
+                c.start == starts_before[c.index]
+            ), f"Clip {c.index} start changed after condense on no-gap track"
 
 
 class TestSplitClip:
@@ -308,7 +337,9 @@ class TestMovObj:
         clip = track.sorted_clips[0]
         orig_start = clip.start
         p._mov_obj(clip, new_time=clip.start)
-        assert clip.start == orig_start, f"Clip moved despite same position: {orig_start} -> {clip.start}"
+        assert (
+            clip.start == orig_start
+        ), f"Clip moved despite same position: {orig_start} -> {clip.start}"
 
     def test_reject_on_collision(self):
         p = Shotcut(FILTER_TEST)
@@ -324,6 +355,7 @@ class TestMovObj:
 # ===========================================================================
 # Edge cases
 # ===========================================================================
+
 
 class TestEdgeCases:
     def test_multiple_saves_stable(self, tmp_path: Path):

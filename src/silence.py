@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import wave
 from argparse import Namespace
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -8,12 +9,10 @@ from pathlib import Path
 from re import compile
 from subprocess import DEVNULL, PIPE, Popen, run
 from tempfile import NamedTemporaryFile
-from typing import Iterable, Optional
 from types import SimpleNamespace
-import wave
+from typing import Iterable, Optional
 
 import numpy as np
-
 from alive_progress import alive_bar
 
 from .shotcut import Shotcut, format_time
@@ -50,6 +49,7 @@ class SentenceBlock(SilenceBlock):
 
     def __str__(self):
         return f'"{self.text}" ({super().__str__()})'
+
 
 @dataclass(frozen=True)
 class SpeechBlock(SilenceBlock):
@@ -199,8 +199,8 @@ def _transcribe_chunks(
         offset_ms = int(start / sr * 1000)
 
         for i in range(n_seg):
-            t0 = pw.whisper_full_get_segment_t0(ctx, i)*10 + offset_ms
-            t1 = pw.whisper_full_get_segment_t1(ctx, i)*10 + offset_ms
+            t0 = pw.whisper_full_get_segment_t0(ctx, i) * 10 + offset_ms
+            t1 = pw.whisper_full_get_segment_t1(ctx, i) * 10 + offset_ms
             text = pw.whisper_full_get_segment_text(ctx, i)
 
             if extract_words:
@@ -211,23 +211,29 @@ def _transcribe_chunks(
                     if token_text.startswith(b"[") and token_text.endswith(b"]"):
                         continue
                     p_data = pw.whisper_full_get_token_data(ctx, i, j)
-                    words.append(WordBlock(
-                        start=Decimal(((p_data.t0 + offset_ms) / 1000)),
-                        end=Decimal(((p_data.t1 + offset_ms) / 1000)),
-                        text=token_text.decode("utf-8", errors="replace").strip(),
-                    ))
-                blocks.append(SpeechBlock(
-                    start=Decimal(t0 / 1000),
-                    end=Decimal(t1 / 1000),
-                    text=text.decode("utf-8", errors="replace").strip(),
-                    words=words,
-                ))
+                    words.append(
+                        WordBlock(
+                            start=Decimal(((p_data.t0 + offset_ms) / 1000)),
+                            end=Decimal(((p_data.t1 + offset_ms) / 1000)),
+                            text=token_text.decode("utf-8", errors="replace").strip(),
+                        )
+                    )
+                blocks.append(
+                    SpeechBlock(
+                        start=Decimal(t0 / 1000),
+                        end=Decimal(t1 / 1000),
+                        text=text.decode("utf-8", errors="replace").strip(),
+                        words=words,
+                    )
+                )
             else:
-                blocks.append(SentenceBlock(
-                    start=Decimal(t0 / 1000),
-                    end=Decimal(t1 / 1000),
-                    text=text.decode("utf-8", errors="replace").strip(),
-                ))
+                blocks.append(
+                    SentenceBlock(
+                        start=Decimal(t0 / 1000),
+                        end=Decimal(t1 / 1000),
+                        text=text.decode("utf-8", errors="replace").strip(),
+                    )
+                )
 
             if bar is not None:
                 bar()
@@ -279,7 +285,7 @@ def detect_words(
 
         _preload_whisper_libs()
 
-        from pywhispercpp.model import Model, ContextParams
+        from pywhispercpp.model import ContextParams, Model
 
         cp = ContextParams(use_gpu=_GPU, gpu_device=0, flash_attn=True)
         model = Model(model_name, n_threads=4, context_params=cp)
@@ -290,7 +296,9 @@ def detect_words(
             sr = wf.getframerate()
 
         with alive_bar(title=f"Transcribing {media.name}") as bar:
-            blocks = _transcribe_chunks(audio, model, sr=sr, extract_words=True, bar=bar)
+            blocks = _transcribe_chunks(
+                audio, model, sr=sr, extract_words=True, bar=bar
+            )
 
         return blocks
 
@@ -303,6 +311,7 @@ def detect_words(
 def _gpu_available() -> bool:
     """Check if the Vulkan GPU backend is available."""
     import importlib.util
+
     spec = importlib.util.find_spec("pywhispercpp")
     if not spec:
         return False
@@ -312,13 +321,19 @@ def _gpu_available() -> bool:
 
 def _preload_whisper_libs() -> None:
     """Pre-load whisper.cpp shared libs whose RUNPATH points to stale build dirs."""
-    import ctypes, importlib.util
+    import ctypes
+    import importlib.util
+
     spec = importlib.util.find_spec("pywhispercpp")
     if spec:
         site = Path(spec.origin).parent.parent
-        for lib in ("libggml-base.so.0", "libggml-cpu.so.0",
-                    "libggml-vulkan.so.0", "libggml.so.0",
-                    "libwhisper.so.1"):
+        for lib in (
+            "libggml-base.so.0",
+            "libggml-cpu.so.0",
+            "libggml-vulkan.so.0",
+            "libggml.so.0",
+            "libwhisper.so.1",
+        ):
             p = site / lib
             if p.exists():
                 ctypes.CDLL(str(p), mode=ctypes.RTLD_GLOBAL)
@@ -340,18 +355,29 @@ def transcribe(args: Namespace) -> int:
     model_name = args.model if args.model != "default" else _default_model()
     output = args.output or media.with_suffix(".srt")
 
-    sys.stderr.write(f"Backend: {'GPU (Vulkan)' if _GPU else 'CPU'}  Model: {model_name}\n")
+    sys.stderr.write(
+        f"Backend: {'GPU (Vulkan)' if _GPU else 'CPU'}  Model: {model_name}\n"
+    )
 
     tmp = NamedTemporaryFile(suffix=".wav")
     cmd = [
-        "ffmpeg", "-y", "-i", str(media),
-        "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(tmp.name),
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(media),
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "pcm_s16le",
+        str(tmp.name),
     ]
     run(cmd, stderr=DEVNULL, stdout=DEVNULL, check=True)
 
     _preload_whisper_libs()
 
-    from pywhispercpp.model import Model, ContextParams
+    from pywhispercpp.model import ContextParams, Model
 
     sys.stderr.write("Loading model ...\n")
     cp = ContextParams(use_gpu=_GPU, gpu_device=0, flash_attn=True)
@@ -381,10 +407,21 @@ def _format_srt(segments: list[SpeechBlock] | list[SentenceBlock]) -> str:
     return "\n".join(lines)
 
 
-FILLER_WORDS = frozenset({
-    "um", "umm", "uhh", "uh", "ahh", "ah", "erm", "er",
-    "hmm", "mm", "mhm",
-})
+FILLER_WORDS = frozenset(
+    {
+        "um",
+        "umm",
+        "uhh",
+        "uh",
+        "ahh",
+        "ah",
+        "erm",
+        "er",
+        "hmm",
+        "mm",
+        "mhm",
+    }
+)
 
 
 def detect_fillers(
@@ -535,9 +572,7 @@ def _apply_cuts(
     for idx in cut_regions:
         track = shotcut.timeline.tracks[idx]
         for region in sorted(all_regions, key=lambda r: r.start, reverse=True):
-            shotcut.cut_from_track(
-                track, time=region.start, duration=region.duration
-            )
+            shotcut.cut_from_track(track, time=region.start, duration=region.duration)
 
             shotcut.remove_time(
                 track, duration=region.duration, start_time=region.start

@@ -10,19 +10,26 @@ from pathlib import Path
 
 def _lazy(mod_name: str, attr: str):
     """Import *attr* from *mod_name* only when called."""
+
     def wrapper(*args, **kwargs):
         mod = importlib.import_module(f".{mod_name}", package=__package__)
         return getattr(mod, attr)(*args, **kwargs)
+
     return wrapper
 
 
 WHISPER_MODELS = [
     "default",
-    "tiny.en", "tiny",
-    "base.en", "base",
-    "small.en", "small",
-    "medium.en", "medium",
-    "large-v3", "large-v3-turbo",
+    "tiny.en",
+    "tiny",
+    "base.en",
+    "base",
+    "small.en",
+    "small",
+    "medium.en",
+    "medium",
+    "large-v3",
+    "large-v3-turbo",
 ]
 
 
@@ -49,6 +56,21 @@ def setup_parser() -> ArgumentParser:
 
     subcommands = parser.add_subparsers(help="sub-command help")
 
+    # Legacy Updater
+    updater_parser = subcommands.add_parser("legacy-updater", aliases=["update-titles"])
+    updater_parser.add_argument(
+        "--env-youtube",
+        type=Path,
+        default=Path(".env.youtube"),
+        help="Filepath for the youtube credentials",
+    )
+    updater_parser.add_argument(
+        "--commit",
+        action="store_true",
+        help="If set, actually pushes the title updates to the YouTube API. Otherwise performs a Dry Run.",
+    )
+    updater_parser.set_defaults(func=_lazy("legacy_updater", "legacy_update"))
+
     # Playlist automation
 
     playlist_parser = subcommands.add_parser(
@@ -60,13 +82,17 @@ def setup_parser() -> ArgumentParser:
         default=Path(".env.youtube"),
         help="Filepath for the youtube credentials",
     )
-    playlist_parser.set_defaults(func=_lazy("playlist_automation", "playlist_automation"))
+    playlist_parser.set_defaults(
+        func=_lazy("playlist_automation", "playlist_automation")
+    )
 
     # Calendar automation
     calendar_parser = subcommands.add_parser(
         "calendar-automation", aliases=["calendar"]
     )
-    calendar_parser.set_defaults(func=_lazy("calendar_automation", "calendar_automation"))
+    calendar_parser.set_defaults(
+        func=_lazy("calendar_automation", "calendar_automation")
+    )
     calendar_parser.add_argument(
         "--env-youtube",
         type=Path,
@@ -149,9 +175,7 @@ def setup_parser() -> ArgumentParser:
     music_parser.set_defaults(func=_lazy("background_music", "background_music"))
 
     # Silence removal
-    silence_parser = subcommands.add_parser(
-        "silence-removal", aliases=["silence"]
-    )
+    silence_parser = subcommands.add_parser("silence-removal", aliases=["silence"])
     silence_parser.add_argument(
         "project",
         type=Path,
@@ -217,9 +241,7 @@ def setup_parser() -> ArgumentParser:
     silence_parser.set_defaults(func=_lazy("silence", "silence_removal"))
 
     # Transcribe
-    transcribe_parser = subcommands.add_parser(
-        "transcribe", aliases=["captions"]
-    )
+    transcribe_parser = subcommands.add_parser("transcribe", aliases=["captions"])
     transcribe_parser.add_argument(
         "media",
         type=Path,
@@ -233,7 +255,8 @@ def setup_parser() -> ArgumentParser:
         help="Whisper model name (default: medium.en if GPU, tiny.en if CPU)",
     )
     transcribe_parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=Path,
         default=None,
         help="Output SRT file path (default: <media>.srt)",

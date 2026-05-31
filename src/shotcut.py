@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum, auto
 from pathlib import Path
-from re import compile as re_compile, search
+from re import compile as re_compile
+from re import search
 from signal import SIGALRM, alarm, signal
 from typing import Any, Literal, Optional
 from xml.etree.ElementTree import Element, ElementTree, indent, parse
@@ -163,9 +164,11 @@ class BinAsset:
     def duration_string(self) -> str:
         return format_time(self.duration)
 
+
 @dataclass
 class FilterableObject:
     pass
+
 
 @dataclass
 class TimelineClip(FilterableObject):
@@ -506,7 +509,9 @@ class Shotcut:
                             index=idx,
                             path=Path(props["resource"]),
                             duration=parse_time(props.get("length", "00:00:00.000")),
-                            mlt_service=props["mlt_service"].removesuffix("-novalidate"),
+                            mlt_service=props["mlt_service"].removesuffix(
+                                "-novalidate"
+                            ),
                             attrib=dict(elem.attrib),
                             properties=props,
                         )
@@ -515,7 +520,9 @@ class Shotcut:
                             index=idx,
                             path=Path(props["resource"]),
                             duration=parse_time(props.get("length", "00:00:00.000")),
-                            mlt_service=props.get("mlt_service", "avformat").removesuffix("-novalidate"),
+                            mlt_service=props.get(
+                                "mlt_service", "avformat"
+                            ).removesuffix("-novalidate"),
                             is_producer=True,
                             attrib=dict(elem.attrib),
                             properties=props,
@@ -527,7 +534,9 @@ class Shotcut:
         tractors = root.findall("tractor")
         if not tractors:
             playlist_id = self.details.get("producer", "playlist0")
-            tractor = Element("tractor", {"id": "tractor0", "title": self.details.get("title", "")})
+            tractor = Element(
+                "tractor", {"id": "tractor0", "title": self.details.get("title", "")}
+            )
             tractor.append(Element("track", {"producer": playlist_id}))
             root.append(tractor)
             return tractor
@@ -554,7 +563,9 @@ class Shotcut:
             if prop["mlt_service"] == "frei0r.cairoblend":
                 blends[prop["b_track"]] = True
 
-        if (marker_nodes := main.find("properties[@name='shotcut:markers']")) is not None:
+        if (
+            marker_nodes := main.find("properties[@name='shotcut:markers']")
+        ) is not None:
             for marker in marker_nodes.findall("properties"):
                 this_prop = self._properties(marker)
                 idx = int(marker.attrib["name"])
@@ -573,7 +584,9 @@ class Shotcut:
 
                 audio = track.get("hide", "") == "video"
                 track_kind = "audio" if audio else "video"
-                track_name = self._properties(this_playlist).get("shotcut:name", f"Track {idx}")
+                track_name = self._properties(this_playlist).get(
+                    "shotcut:name", f"Track {idx}"
+                )
 
                 blend = not audio and (str(track_idx) in blends)
 
@@ -602,7 +615,9 @@ class Shotcut:
                             )
                             cursor += transition_object.duration
 
-                        elif producer_name.startswith("chain") or producer_name.startswith("producer"):
+                        elif producer_name.startswith(
+                            "chain"
+                        ) or producer_name.startswith("producer"):
                             clip_element = self._find_element(root, producer_name)
                             if clip_element is None:
                                 continue
@@ -623,9 +638,10 @@ class Shotcut:
                                 clip_path_str = clip_properties.get("resource", "")
                                 colon_idx = clip_path_str.find(":")
                                 if colon_idx > 0 and all(
-                                    c in "0123456789." for c in clip_path_str[:colon_idx]
+                                    c in "0123456789."
+                                    for c in clip_path_str[:colon_idx]
                                 ):
-                                    actual_path = Path(clip_path_str[colon_idx + 1:])
+                                    actual_path = Path(clip_path_str[colon_idx + 1 :])
                                     for asset in self.assets.values():
                                         if asset.path == actual_path:
                                             bin_asset = asset.index
@@ -714,7 +730,7 @@ class Shotcut:
                         if colon_idx > 0 and all(
                             c in "0123456789." for c in clip_path_str[:colon_idx]
                         ):
-                            actual_path = Path(clip_path_str[colon_idx + 1:])
+                            actual_path = Path(clip_path_str[colon_idx + 1 :])
                             for asset in self.assets.values():
                                 if asset.path == actual_path:
                                     bin_asset = asset.index
@@ -902,7 +918,9 @@ class Shotcut:
             props["resource"] = str(my_bin.path)
             props["mlt_service"] = my_bin.mlt_service
 
-            chain_elem = self.create_element("chain", attributes=attrib, properties=props)
+            chain_elem = self.create_element(
+                "chain", attributes=attrib, properties=props
+            )
 
             for filt_elem in clip.filters:
                 chain_elem.append(deepcopy(filt_elem))
@@ -1130,9 +1148,7 @@ class Shotcut:
                     video_id = self._next_mapping(
                         self._all_objects(root, ".//transition")
                     )
-                    main.append(
-                        self._create_video_transition(video_id, A, B)
-                    )
+                    main.append(self._create_video_transition(video_id, A, B))
 
     def _write_markers(self, root: Element) -> None:
         main = self._find_tractor(root)
@@ -1223,13 +1239,12 @@ class Shotcut:
 
         used_tracks = set(1 + t for t in self._tracks.keys())
         all_tracks = main.findall("track")
-        tracks = [
-            t for t in all_tracks if t.get("producer", "").startswith("playlist")
-        ]
+        tracks = [t for t in all_tracks if t.get("producer", "").startswith("playlist")]
 
         # Tractor indices = enumerate positions of playlist tracks in all_tracks
         tractor_indices = sorted(
-            i for i, t in enumerate(all_tracks)
+            i
+            for i, t in enumerate(all_tracks)
             if t.get("producer", "").startswith("playlist")
         )
         used_playlists = set(tractor_indices)
@@ -1712,7 +1727,11 @@ class Shotcut:
         track: Track,
         filter_id: str,
     ) -> None:
-        track.filters = [(fid, length, props) for fid, length, props in track.filters if fid != filter_id]
+        track.filters = [
+            (fid, length, props)
+            for fid, length, props in track.filters
+            if fid != filter_id
+        ]
         self.timeline.tracks[track.index] = track
 
     def add_transition_to_track(

@@ -10,12 +10,12 @@ from src.shotcut_transitions import (
     RESOURCE_MAP,
     AudioTransition,
     BarHorizontal,
-    BarVertical,
     BarnDoorDiagonalNWSE,
     BarnDoorDiagonalSWNE,
     BarnDoorHorizontal,
     BarnDoorVertical,
     BarnVUp,
+    BarVertical,
     BoxBottomCentre,
     BoxBottomLeft,
     BoxBottomRight,
@@ -87,7 +87,9 @@ class TestTransitionContainer:
         assert xml.find("property[@name='shotcut:transition']").text == "lumaMix"
 
     def test_roundtrip(self):
-        t = make_transition(video=Dissolve(1), audio=AudioTransition(2, mix_fraction=0.5))
+        t = make_transition(
+            video=Dissolve(1), audio=AudioTransition(2, mix_fraction=0.5)
+        )
         xml = t.to_xml()
         xml = _roundtrip_xml(xml)
         t2 = Transition.from_xml(xml)
@@ -159,6 +161,7 @@ class TestAudioTransition:
     def test_from_xml_no_start(self):
         xml = Element("transition", {"id": "transition5", "out": "00:00:05.000"})
         from xml.etree.ElementTree import SubElement
+
         SubElement(xml, "property", {"name": "a_track"}).text = "0"
         SubElement(xml, "property", {"name": "b_track"}).text = "1"
         SubElement(xml, "property", {"name": "mlt_service"}).text = "mix"
@@ -246,6 +249,7 @@ class TestDissolve:
     def test_from_xml_no_resource(self):
         xml = Element("transition", {"id": "transition0", "out": "00:00:05.000"})
         from xml.etree.ElementTree import SubElement
+
         SubElement(xml, "property", {"name": "a_track"}).text = "0"
         SubElement(xml, "property", {"name": "b_track"}).text = "1"
         SubElement(xml, "property", {"name": "mlt_service"}).text = "luma"
@@ -331,6 +335,7 @@ class TestCustom:
         pgm.write_text("P5")
         xml = Element("transition", {"id": "transition0", "out": "00:00:05.000"})
         from xml.etree.ElementTree import SubElement
+
         SubElement(xml, "property", {"name": "a_track"}).text = "0"
         SubElement(xml, "property", {"name": "b_track"}).text = "1"
         SubElement(xml, "property", {"name": "mlt_service"}).text = "luma"

@@ -12,8 +12,15 @@ from .youtube import YouTube
 
 LOG = getLogger("playlist-automation")
 
-PLAYLIST_REGEX = re.compile(r"(:?(?P<series>[^\-]+)\- )?(?P<category>.*)")
-VIDEO_REGEX = re.compile(
+# --- NEW FORMATS ---
+NEW_PLAYLIST_REGEX = re.compile(r"^\s*(?P<series>[^|]+?)\s*\|\s*(?P<category>.+?)\s*$")
+NEW_VIDEO_REGEX = re.compile(
+    r"^\s*(?P<title>[^|]+?)\s*\|\s*(?P<series>[^|#]+?)\s*#(?P<ep_number>\d+)(?:\s*\|\s*(?P<category>[^|]+?))?\s*$"
+)
+
+# --- OLD FORMATS ---
+OLD_PLAYLIST_REGEX = re.compile(r"(:?(?P<series>[^\-]+)\- )?(?P<category>.*)")
+OLD_VIDEO_REGEX = re.compile(
     r"(?P<category>[^:]+)(:?: (?P<series>[^#]+))?#(?P<ep_number>\d+) \- (?P<title>.*)"
 )
 
@@ -38,16 +45,20 @@ def game_to_short(game_name: str) -> str:
 
 
 def playlist_mapping(playlists: list[Playlist]) -> dict[str, dict[str, Playlist]]:
-    """
-    Generate a mapping from Playlists to playlist meta-details.
-
-    Returns: {GAME_ACRONYM: [Series_for_game, ...], ...}
-    """
     mapping: dict[str, dict[str, Playlist]] = {}
     for playlist in playlists:
-        if search := PLAYLIST_REGEX.search(playlist.snippet.title):
+        # Try new format, fallback to old
+        if search := (
+            NEW_PLAYLIST_REGEX.search(playlist.snippet.title)
+            or OLD_PLAYLIST_REGEX.search(playlist.snippet.title)
+        ):
+
             category: str = search.group("category").strip()
-            series: str = str(search.group("series")).strip()
+            series: str = (
+                str(search.group("series")).strip()
+                if search.group("series")
+                else category
+            )
             shorthand = game_to_short(category)
 
             if shorthand not in mapping:
@@ -59,16 +70,23 @@ def playlist_mapping(playlists: list[Playlist]) -> dict[str, dict[str, Playlist]
 
 
 def video_mapping(videos: list[Video]) -> dict[str, dict[str, list[Video]]]:
-    """
-    Generate a mapping from Videos to video meta-details.
-
-    Returns: {GAME_ACRONYM: {Series_for_game: [videos_for_series, ...], ...}, ...}
-    """
     mapping: dict[str, dict[str, list[Video]]] = {}
     for video in videos:
-        if search := VIDEO_REGEX.search(video.snippet.title):
-            category: str = search.group("category").strip()
-            series: str = str(search.group("series")).strip()
+        # Try new format, fallback to old
+        if search := (
+            NEW_VIDEO_REGEX.search(video.snippet.title)
+            or OLD_VIDEO_REGEX.search(video.snippet.title)
+        ):
+
+            # Category might be None in the new format if it's a standalone tutorial
+            category_match = search.group("category")
+            series_match = search.group("series")
+
+            category = (
+                category_match.strip() if category_match else series_match.strip()
+            )
+            series = series_match.strip() if series_match else category
+
             shorthand = game_to_short(category)
 
             if shorthand not in mapping.keys():

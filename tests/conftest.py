@@ -1,4 +1,5 @@
 """Auto-skip test files whose dependencies are not installed."""
+
 from __future__ import annotations
 
 import importlib.util

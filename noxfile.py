@@ -1,4 +1,5 @@
 """Project entrypoints with automatic dependecy management."""
+
 from __future__ import annotations
 
 import nox
@@ -17,9 +18,11 @@ def _ensure_whisper(session: nox.Session) -> None:
     """Install pywhispercpp only if not already present in the session venv."""
     try:
         out = session.run(
-            "python3", "-c",
+            "python3",
+            "-c",
             "import _pywhispercpp; print('yes')",
-            silent=True, log=False,
+            silent=True,
+            log=False,
         )
         if out and out.strip() == "yes":
             session.log("pywhispercpp already installed, skipping rebuild.")
@@ -71,6 +74,14 @@ def playlist_automation(session: nox.Session) -> None:
     session.install("-r", requirements_google)
     session.log("Running playlist-automation ...")
     _run(session, "playlist-automation", *session.posargs)
+
+@nox.session(name="legacy-updater")
+def legacy_updater(session: nox.Session) -> None:
+    """Run bulk legacy title updates (needs Google API deps)."""
+    session.install("-r", requirements_base)
+    session.install("-r", requirements_google)
+    session.log("Running legacy-updater ...")
+    _run(session, "legacy-updater", *session.posargs)
 
 
 @nox.session()

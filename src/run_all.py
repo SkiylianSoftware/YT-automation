@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import importlib
 from argparse import ArgumentParser, Namespace, _SubParsersAction
 from logging import getLogger
 from typing import TYPE_CHECKING, Callable
-
-if TYPE_CHECKING:
-    from .calendar_automation import calendar_automation
-    from .playlist_automation import playlist_automation
-    from .youtube import YouTube
+from .youtube import YouTube
 
 LOG = getLogger("combined")
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from random import shuffle
 from typing import Optional
 
-from .shotcut import Shotcut, Track, find_project, find_latest_project, format_time
+from .shotcut import Shotcut, Track, find_latest_project, find_project, format_time
 
 LOG = getLogger("background-music")
 
@@ -55,9 +55,7 @@ def _debug_songs(
         log.debug(f"- {start} {song}")
 
 
-def find_existing_songs(
-    track: Track, songs: list[Song]
-) -> list[Song]:
+def find_existing_songs(track: Track, songs: list[Song]) -> list[Song]:
     song_map = {s.id: s for s in songs}
     existing: list[Song] = []
     for clip in track.clips.values():

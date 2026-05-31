@@ -156,6 +156,18 @@ class YouTube:
                 }
             },
         )
+    
+    def update_playlist_title(self, playlist_id: str, new_title: str) -> None:
+        """Update the title of an existing playlist."""
+        self.client.playlists.update(
+            parts="snippet",
+            body={
+                "id": playlist_id,
+                "snippet": {
+                    "title": new_title
+                }
+            }
+        )
 
     # Video operations
 
@@ -196,3 +208,20 @@ class YouTube:
     def video(self, video_id: str) -> Video:
         """Return video object from video ID."""
         return self.client.videos.list(video_id=video_id).items[0]
+
+
+    def update_video_title(self, video_id: str, new_title: str, category_id: str) -> None:
+        """
+        Update the title of an existing video.
+        Note: The YouTube API requires the categoryId to be present when updating a video snippet.
+        """
+        self.client.videos.update(
+            parts="snippet",
+            body={
+                "id": video_id,
+                "snippet": {
+                    "title": new_title,
+                    "categoryId": category_id
+                }
+            }
+        )

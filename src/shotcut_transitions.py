@@ -59,7 +59,9 @@ class Transition:
             tractor,
             "property",
             {"name": "shotcut:transition"},
-        ).text = "mix" if is_audio_only else "lumaMix"
+        ).text = (
+            "mix" if is_audio_only else "lumaMix"
+        )
         SubElement(
             tractor,
             "track",
@@ -225,7 +227,11 @@ class VideoTransitionBase(TransitionBase):
             else 0.2
         )
         factory_elem = elem.find("property[@name='factory']")
-        factory = factory_elem.text if factory_elem is not None and factory_elem.text else "loader"
+        factory = (
+            factory_elem.text
+            if factory_elem is not None and factory_elem.text
+            else "loader"
+        )
 
         resource = elem.find("property[@name='resource']")
         if resource is None or resource.text is None:
@@ -239,7 +245,13 @@ class VideoTransitionBase(TransitionBase):
             elif Found := RESOURCE_MAP.get(restext):
                 result = Found(index=index, invert=invert, softness=softness)
             else:
-                result = Custom(index=index, path=Path(restext), invert=invert, softness=softness, validate=False)
+                result = Custom(
+                    index=index,
+                    path=Path(restext),
+                    invert=invert,
+                    softness=softness,
+                    validate=False,
+                )
 
         result.factory = factory
         return result
@@ -368,7 +380,9 @@ class Custom(VideoTransitionBase):
         super().__init__(index, invert, softness)
         self.resource = str(path.expanduser())
         if validate:
-            assert path.exists(), f"resource {path} does not exist for custom transition"
+            assert (
+                path.exists()
+            ), f"resource {path} does not exist for custom transition"
 
 
 RESOURCE_MAP: dict[str, type[VideoTransitionBase]] = {

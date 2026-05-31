@@ -12,8 +12,8 @@ from src.shotcut_effects import (
     ColourGrading,
     Contrast,
     FadeInAudio,
-    FadeOutAudio,
     FadeInVideo,
+    FadeOutAudio,
     FadeOutVideo,
     Filter,
     Gain,
@@ -239,7 +239,9 @@ class TestContrast:
 
 
 class TestFadeInAudio:
-    @pytest.mark.parametrize("fade_type", ["natural", "s-curve", "fast-slow", "slow-fast"])
+    @pytest.mark.parametrize(
+        "fade_type", ["natural", "s-curve", "fast-slow", "slow-fast"]
+    )
     def test_roundtrip(self, fade_type):
         f = FadeInAudio(0, duration=Decimal("2"), type=fade_type)
         xml = _roundtrip_xml(f.to_xml(Decimal("10")))
@@ -260,7 +262,9 @@ class TestFadeInAudio:
 
 
 class TestFadeOutAudio:
-    @pytest.mark.parametrize("fade_type", ["natural", "s-curve", "fast-slow", "slow-fast"])
+    @pytest.mark.parametrize(
+        "fade_type", ["natural", "s-curve", "fast-slow", "slow-fast"]
+    )
     def test_roundtrip(self, fade_type):
         f = FadeOutAudio(0, duration=Decimal("2"), type=fade_type)
         xml = _roundtrip_xml(f.to_xml(Decimal("10")))
