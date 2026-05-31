@@ -43,7 +43,6 @@ def legacy_update(args: Namespace, yt: YouTube) -> int:
                 
                 if not dry_run:
                     try:
-                        # Extract the full snippet to avoid wiping existing metadata
                         playlist_snippet = playlist.snippet.to_dict()
                         playlist_snippet["title"] = new_title
                         
@@ -56,12 +55,17 @@ def legacy_update(args: Namespace, yt: YouTube) -> int:
                         )
                     except Exception as e:
                         log.error(f"Failed to update playlist '{old_title}': {e}")
+        else:
+            log.debug(f"Skipping playlist template mismatch: {old_title}")
 
     # --- PROCESS VIDEOS ---
     log.info("--- VIDEO TITLE UPDATES ---")
     channel_videos = yt.public_videos
     for video in channel_videos:
         old_title = video.snippet.title
+        new_title = None
+
+        # Scenario 1: It's an episodic video matching your old template
         if search := OLD_VIDEO_REGEX.search(old_title):
             title = str(search.group("title") or "").strip()
             ep = str(search.group("ep_number") or "").strip()
@@ -74,25 +78,42 @@ def legacy_update(args: Namespace, yt: YouTube) -> int:
             else:
                 new_title = f"{title} | {category} #{ep}"
                 
-            if new_title != old_title:
-                log.info(f"Rename: '{old_title}'  =>  '{new_title}'")
-                videos_updated += 1
+        # Scenario 2: Standalone video with old colon layout e.g. "Skiy: Channel Trailer - 2025"
+        elif " - " in old_title and ":" in old_title:
+            try:
+                parts_colon = old_title.split(":", 1)
+                brand_or_series = parts_colon[0].strip()
+                parts_hyphen = parts_colon[1].split(" - ", 1)
+                core_title = parts_hyphen[0].strip()
+                extra_context = parts_hyphen[1].strip()
                 
-                if not dry_run:
-                    try:
-                        # Extract the full snippet to preserve descriptions and tags
-                        video_snippet = video.snippet.to_dict()
-                        video_snippet["title"] = new_title
-                        
-                        yt.client.videos.update(
-                            parts="snippet",
-                            body={
-                                "id": video.id,
-                                "snippet": video_snippet
-                            }
-                        )
-                    except Exception as e:
-                        log.error(f"Failed to update video '{old_title}': {e}")
+                # Format: Core Title [Year/Context] | Brand/Series
+                new_title = f"{core_title} {extra_context} | {brand_or_series}"
+            except Exception:
+                pass
+
+        # If a transformation was successfully mapped and it genuinely changed the layout
+        if new_title and new_title != old_title:
+            log.info(f"Rename: '{old_title}'  =>  '{new_title}'")
+            videos_updated += 1
+            
+            if not dry_run:
+                try:
+                    video_snippet = video.snippet.to_dict()
+                    video_snippet["title"] = new_title
+                    
+                    yt.client.videos.update(
+                        parts="snippet",
+                        body={
+                            "id": video.id,
+                            "snippet": video_snippet
+                        }
+                    )
+                except Exception as e:
+                    log.error(f"Failed to update video '{old_title}': {e}")
+        else:
+            # Demoted to a clean debug log line so it doesn't muck up your terminal output
+            log.debug(f"No formatting changes needed for: {old_title}")
 
     # --- SUMMARY ---
     log.info("--- SUMMARY ---")

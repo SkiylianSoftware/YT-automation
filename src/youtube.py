@@ -113,8 +113,23 @@ class YouTube:
         return self.client.channels.list(channel_id=channel_id).items[0]
 
     def channel_playlists(self, channel_id: str) -> list[Playlist]:
-        """List of all playlists for the channel `channel_id`."""
-        return self.client.playlists.list(channel_id=channel_id).items
+        """List of all playlists for the channel `channel_id` via pagination."""
+        all_playlists: list[Playlist] = []
+        next_page_token = None
+
+        while True:
+            response = self.client.playlists.list(
+                channel_id=channel_id,
+                max_results=50,
+                page_token=next_page_token
+            )
+            all_playlists.extend(response.items)
+            
+            next_page_token = getattr(response, "nextPageToken", None)
+            if not next_page_token:
+                break
+                
+        return all_playlists
 
     def channel_videos(self, channel_id: str) -> list[Video]:
         """List of all videos for the channel `channel_id`."""
@@ -128,19 +143,48 @@ class YouTube:
 
     @property
     def playlists(self) -> list[Playlist]:
-        """List of all playlists for `me`."""
-        return self.client.playlists.list(mine=True).items
+        """List of all playlists for `me` via pagination."""
+        all_playlists: list[Playlist] = []
+        next_page_token = None
+
+        while True:
+            response = self.client.playlists.list(
+                mine=True,
+                max_results=50,
+                page_token=next_page_token
+            )
+            all_playlists.extend(response.items)
+            
+            next_page_token = getattr(response, "nextPageToken", None)
+            if not next_page_token:
+                break
+                
+        return all_playlists
 
     def playlist_videos(self, playlist_id: str) -> list[Video]:
-        """List of all `videos` in the playlist with ID `playlist_id`."""
-        videos: list[Video] = []
-        for item in self.client.playlistItems.list(
-            playlist_id=playlist_id, max_results=int(1e6)
-        ).items:
-            videos.extend(
-                self.client.videos.list(video_id=item.contentDetails.videoId).items
+        """List of all `videos` in the playlist with ID `playlist_id` via pagination."""
+        video_objects: list[Video] = []
+        next_page_token = None
+
+        while True:
+            response = self.client.playlistItems.list(
+                playlist_id=playlist_id,
+                max_results=50,
+                page_token=next_page_token
             )
-        return videos
+
+            video_ids = [item.contentDetails.videoId for item in response.items]
+
+            if video_ids:
+                comma_separated_ids = ",".join(video_ids)
+                batch_response = self.client.videos.list(video_id=comma_separated_ids)
+                video_objects.extend(batch_response.items)
+
+            next_page_token = getattr(response, "nextPageToken", None)
+            if not next_page_token:
+                break
+
+        return video_objects
 
     def add_to_playlist(self, playlist: Playlist, video: Video) -> None:
         """Add a `video` to the `playlist`."""
@@ -156,7 +200,7 @@ class YouTube:
                 }
             },
         )
-    
+        
     def update_playlist_title(self, playlist_id: str, new_title: str) -> None:
         """Update the title of an existing playlist."""
         self.client.playlists.update(
@@ -209,12 +253,8 @@ class YouTube:
         """Return video object from video ID."""
         return self.client.videos.list(video_id=video_id).items[0]
 
-
     def update_video_title(self, video_id: str, new_title: str, category_id: str) -> None:
-        """
-        Update the title of an existing video.
-        Note: The YouTube API requires the categoryId to be present when updating a video snippet.
-        """
+        """Update the title of an existing video."""
         self.client.videos.update(
             parts="snippet",
             body={
