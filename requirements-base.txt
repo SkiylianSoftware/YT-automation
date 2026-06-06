@@ -1,3 +1,5 @@
 alive-progress
 isodate
 python-dotenv
+rich
+questionary

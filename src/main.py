@@ -7,6 +7,13 @@ from argparse import ArgumentParser
 from logging import getLogger
 from pathlib import Path
 
+# Ensure the shared pywhispercpp build directory (~/.cache/yt-automation/whisper-site/)
+# is on the module search path BEFORE any module-level imports (silence.py
+# imports numpy at module load, and numpy lives in the shared target dir).
+_whisper_site = Path.home() / ".cache" / "yt-automation" / "whisper-site"
+if _whisper_site.exists():
+    sys.path.insert(0, str(_whisper_site))
+
 
 def _lazy(mod_name: str, attr: str):
     """Import *attr* from *mod_name* only when called."""
@@ -214,6 +221,13 @@ def setup_parser() -> ArgumentParser:
         help="Ignore silences longer than this many seconds",
     )
     silence_parser.add_argument(
+        "--mode",
+        type=str,
+        default="standard",
+        choices=["basic", "standard", "full"],
+        help="Processing level: basic (silence only), standard (silence + fillers), full (+ repairs + repetitions + discourse markers)",
+    )
+    silence_parser.add_argument(
         "--filler-words",
         type=str,
         default=None,
@@ -245,18 +259,68 @@ def setup_parser() -> ArgumentParser:
     transcribe_parser.add_argument(
         "media",
         type=Path,
+        nargs="?",
         help="Filepath of the video/audio to transcribe",
+    )
+    transcribe_parser.add_argument(
+        "--dir",
+        type=Path,
+        default=None,
+        help="Directory of video/audio files to transcribe (bulk mode)",
+    )
+    transcribe_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-transcribe even if SRT already exists",
+    )
+    transcribe_parser.add_argument(
+        "--language",
+        type=str,
+        default=None,
+        help="Language code (e.g. en, fr, de). Auto-detected if omitted."
+        " Non-.en models handle foreign words better.",
+    )
+    transcribe_parser.add_argument(
+        "--confidence-threshold",
+        type=float,
+        default=0.5,
+        help="Flag words below this confidence in SRT comments (e.g. 0.5)",
+    )
+    transcribe_parser.add_argument(
+        "--second-model",
+        type=str,
+        default="base",
+        metavar="MODEL",
+        choices=WHISPER_MODELS+["none"],
+        help="Second Whisper model for divergence detection (e.g. tiny.en)."
+        " When set, words where the two models disagree are flagged in the review file.",
+    )
+    transcribe_parser.add_argument(
+        "--auto-correct-threshold",
+        type=float,
+        default=0.95,
+        help="Auto-correct primary words when secondary confidence >= this (default: 0.95)",
+    )
+    transcribe_parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Interactively review flagged words after transcription"
+        " (plays audio, prompts for corrections)",
+    )
+    transcribe_parser.add_argument(
+        "--review",
+        action="store_true",
+        help="Generate a review file listing low-confidence words with timestamps",
     )
     transcribe_parser.add_argument(
         "--model",
         type=str,
         default="default",
         choices=WHISPER_MODELS,
-        help="Whisper model name (default: medium.en if GPU, tiny.en if CPU)",
+        help="Whisper model name (default: large-v3-turbo if GPU, tiny.en if CPU)",
     )
     transcribe_parser.add_argument(
-        "-o",
-        "--output",
+        "-o", "--output",
         type=Path,
         default=None,
         help="Output SRT file path (default: <media>.srt)",

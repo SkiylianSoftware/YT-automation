@@ -3,7 +3,9 @@ from __future__ import annotations
 from argparse import ArgumentParser, Namespace, _SubParsersAction
 from logging import getLogger
 from typing import TYPE_CHECKING, Callable
-from .youtube import YouTube
+
+if TYPE_CHECKING:
+    from .youtube import YouTube
 
 LOG = getLogger("combined")
 

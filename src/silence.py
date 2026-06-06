@@ -38,6 +38,7 @@ class SilenceBlock:
 @dataclass(frozen=True)
 class WordBlock(SilenceBlock):
     text: str
+    prob: float = 0.0
 
     def __str__(self):
         return f'"{self.text}" ({super().__str__()})'
@@ -160,12 +161,65 @@ def detect_silence(
     return silences
 
 
+def _merge_short_segments(
+    blocks: list[SentenceBlock],
+    max_gap_ms: int = 800,
+    max_duration_ms: int = 8000,
+) -> list[SentenceBlock]:
+    if not blocks:
+        return []
+    merged: list[SentenceBlock] = [blocks[0]]
+    for b in blocks[1:]:
+        last = merged[-1]
+        gap = float(b.start - last.end) * 1000
+        cand_dur = float(b.end - last.start) * 1000
+        if gap <= max_gap_ms and cand_dur <= max_duration_ms:
+            merged[-1] = SentenceBlock(
+                start=last.start,
+                end=b.end,
+                text=last.text + " " + b.text,
+            )
+        else:
+            merged.append(b)
+    return merged
+
+
+def _split_long_segments(
+    blocks: list[SentenceBlock],
+    max_duration_s: Decimal = Decimal("8.0"),
+) -> list[SentenceBlock]:
+    import re as _re
+    result: list[SentenceBlock] = []
+    for b in blocks:
+        duration = float(b.end - b.start)
+        if duration <= float(max_duration_s):
+            result.append(b)
+            continue
+        parts = _re.split(r"(?<=[.!?])\s+", b.text)
+        if len(parts) < 2:
+            result.append(b)
+            continue
+        total_chars = sum(len(p) for p in parts)
+        cursor = float(b.start)
+        for part in parts:
+            frac = len(part) / total_chars
+            part_end = cursor + duration * frac
+            result.append(SentenceBlock(
+                start=Decimal(str(cursor)),
+                end=Decimal(str(part_end)),
+                text=part,
+            ))
+            cursor = part_end
+    return result
+
+
 def _transcribe_chunks(
     audio: np.ndarray,
     model,
     sr: int = 16000,
     extract_words: bool = False,
     bar=None,
+    language: str | None = None,
 ) -> list[SpeechBlock] | list[SentenceBlock]:
     import _pywhispercpp as pw
 
@@ -176,11 +230,13 @@ def _transcribe_chunks(
     params.print_progress = False
     params.print_realtime = False
     params.n_threads = 4
-    params.no_speech_thold = 0.4
+    params.no_speech_thold = 0.2
     params.temperature = 0.0
     params.temperature_inc = 0.0
     params.token_timestamps = extract_words
     params.no_timestamps = False
+    if language:
+        params.language = language.encode()
 
     chunk_len = CHUNK_DURATION_S * sr
     n_chunks = (len(audio) + chunk_len - 1) // chunk_len
@@ -208,21 +264,38 @@ def _transcribe_chunks(
                 words: list[WordBlock] = []
                 for j in range(n_tokens):
                     token_text = pw.whisper_full_get_token_text(ctx, i, j)
-                    if token_text.startswith(b"[") and token_text.endswith(b"]"):
+                    token_str = token_text.decode("utf-8", errors="replace").strip() if isinstance(token_text, bytes) else token_text.strip()
+                    if token_str.startswith("[") and token_str.endswith("]"):
                         continue
                     p_data = pw.whisper_full_get_token_data(ctx, i, j)
+                    prob = pw.whisper_full_get_token_p(ctx, i, j)
+
+                    if not any(c.isalnum() for c in token_str):
+                        if words:
+                            prev = words[-1]
+                            words[-1] = WordBlock(
+                                start=prev.start,
+                                end=Decimal(str((p_data.t1 * 10 + offset_ms) / 1000)),
+                                text=prev.text + token_str,
+                                prob=prev.prob,
+                            )
+                        continue
+
+                    t_start = (p_data.t0 * 10 + offset_ms) / 1000
+                    t_end = (p_data.t1 * 10 + offset_ms) / 1000
                     words.append(
                         WordBlock(
-                            start=Decimal(((p_data.t0 + offset_ms) / 1000)),
-                            end=Decimal(((p_data.t1 + offset_ms) / 1000)),
-                            text=token_text.decode("utf-8", errors="replace").strip(),
+                            start=Decimal(str(t_start)),
+                            end=Decimal(str(t_end)),
+                            text=token_str,
+                            prob=float(prob),
                         )
                     )
                 blocks.append(
                     SpeechBlock(
                         start=Decimal(t0 / 1000),
                         end=Decimal(t1 / 1000),
-                        text=text.decode("utf-8", errors="replace").strip(),
+                        text=text.decode("utf-8", errors="replace").strip() if isinstance(text, bytes) else text.strip(),
                         words=words,
                     )
                 )
@@ -231,12 +304,16 @@ def _transcribe_chunks(
                     SentenceBlock(
                         start=Decimal(t0 / 1000),
                         end=Decimal(t1 / 1000),
-                        text=text.decode("utf-8", errors="replace").strip(),
+                        text=text.decode("utf-8", errors="replace").strip() if isinstance(text, bytes) else text.strip(),
                     )
                 )
 
             if bar is not None:
                 bar()
+
+    if not extract_words:
+        blocks = _merge_short_segments(blocks)
+        blocks = _split_long_segments(blocks)
 
     return blocks
 
@@ -323,6 +400,14 @@ def _preload_whisper_libs() -> None:
     """Pre-load whisper.cpp shared libs whose RUNPATH points to stale build dirs."""
     import ctypes
     import importlib.util
+    import sys
+
+    # Add the persistent shared build dir to the module search path so that
+    # all nox sessions (which each have their own venv) can find the
+    # one-time GPU build installed by noxfile.py's _ensure_whisper().
+    whisper_site = Path.home() / ".cache" / "yt-automation" / "whisper-site"
+    if whisper_site.exists():
+        sys.path.insert(0, str(whisper_site))
 
     spec = importlib.util.find_spec("pywhispercpp")
     if spec:
@@ -346,63 +431,434 @@ def _default_model() -> str:
     return "large-v3-turbo" if _GPU else "tiny.en"
 
 
+def _diff_transcriptions(
+    primary: list[SpeechBlock],
+    secondary: list[SpeechBlock],
+) -> dict[int, tuple[str, float]]:
+    """Align word streams from two models and flag divergences.
+
+    Uses difflib word-sequence matching, distributing secondary words
+    proportionally across primary words in replace blocks.
+
+    Returns a dict mapping ``id(word) -> (secondary_text, secondary_confidence)``
+    for words where the two transcriptions disagree.
+    """
+    from difflib import SequenceMatcher
+
+    p_words: list[WordBlock] = []
+    for seg in primary:
+        if seg.words:
+            p_words.extend(seg.words)
+
+    s_flat: list[WordBlock] = []
+    for seg in secondary:
+        if seg.words:
+            s_flat.extend(seg.words)
+
+    if not p_words or not s_flat:
+        return {}
+
+    def _norm(w: WordBlock) -> str:
+        return w.text.lower().strip(".,!?;:\"'()[]-—–")
+
+    p_seq = [_norm(w) for w in p_words]
+    s_seq = [_norm(w) for w in s_flat]
+
+    matcher = SequenceMatcher(None, p_seq, s_seq)
+
+    divergences: dict[int, tuple[str, float]] = {}
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op == "equal":
+            continue
+        n_p = i2 - i1
+        n_s = j2 - j1
+        for k, idx in enumerate(range(i1, i2)):
+            if n_s > 0 and op == "replace":
+                s_start = j1 + int(k * n_s / n_p)
+                s_end = j1 + int((k + 1) * n_s / n_p)
+                s_words = s_flat[s_start:s_end]
+                s_text = " ".join(w.text for w in s_words).strip()
+                s_conf = max(w.prob for w in s_words) if s_words else 0.0
+            else:
+                s_text = ""
+                s_conf = 0.0
+            divergences[id(p_words[idx])] = (s_text, s_conf)
+
+    return divergences
+
+
+def _write_review(
+    entries: list,
+    media: Path,
+    srt_path: Path,
+    threshold: float = 0.5,
+    model_name: str = "",
+    divergences: dict[int, tuple[str, float]] | None = None,
+) -> None:
+    """Write a review file listing low-confidence words with playback commands."""
+    import sys
+    review_path = srt_path.with_suffix(".review.txt")
+    lines: list[str] = [
+        f"Review file for: {media.name}",
+        f"Low-confidence threshold: {threshold}",
+        "Words below this confidence are flagged. Use the ffplay command to hear context.",
+    ]
+    if divergences is not None:
+        lines.append(
+            "Two-pass divergence detection enabled — words where the two models"
+            " disagree are also flagged."
+        )
+    lines.append("")
+
+    n_flagged = 0
+    n_divergent = 0
+    for seg in entries:
+        if not hasattr(seg, "words") or not seg.words:
+            continue
+        for w in seg.words:
+            if w.prob < threshold:
+                n_flagged += 1
+                if divergences is not None and id(w) in divergences:
+                    n_divergent += 1
+
+    if n_flagged == 0:
+        lines.append("No words below the confidence threshold.")
+        if divergences is not None:
+            lines.append("(No divergences between the two model passes.)")
+        review_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        sys.stderr.write(f"Wrote {review_path} (no issues)\n")
+        return
+    elif divergences is not None and n_divergent == 0:
+        lines.append(
+            f"Note: all {n_flagged} low-confidence word(s) matched between"
+            " both models — likely just noisy audio, not foreign terms."
+        )
+        lines.append("")
+
+    for seg in entries:
+        if not hasattr(seg, "words") or not seg.words:
+            continue
+        low = [w for w in seg.words if w.prob < threshold]
+        if not low:
+            continue
+        lines.append(f"--- [{format_time(seg.start)} - {format_time(seg.end)}] ---")
+        lines.append(f"    {seg.text}")
+        for w in low:
+            dur = max(float(w.end - w.start), 0.5)
+            cmd = (
+                f"ffplay -ss {w.start} -t {dur:.1f} -i '{media}' -nodisp -autoexit 2>/dev/null"
+            )
+            annotation = f"'{w.text}' (conf: {w.prob:.2f})"
+            if divergences is not None and id(w) in divergences:
+                s_text, s_conf = divergences[id(w)]
+                if s_text:
+                    annotation += f"  ← secondary: \"{s_text}\" ({s_conf:.0%} conf)"
+                else:
+                    annotation += "  ← (not in secondary output)"
+            lines.append(f"  [{format_time(w.start)}] {annotation}")
+            lines.append(f"    $ {cmd}")
+        lines.append("")
+
+    review_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    sys.stderr.write(f"Wrote {review_path}\n")
+
+
+def _auto_correct(
+    entries: list[SpeechBlock],
+    divergences: dict[int, tuple[str, float]],
+    primary_threshold: float,
+    secondary_threshold: float = 0.95,
+) -> dict[int, str]:
+    """Auto-substitute words where the secondary model is highly confident.
+
+    Returns a dict mapping ``id(word) -> corrected_text`` for primary words
+    that diverged from the secondary model AND the secondary model's
+    confidence is at or above *secondary_threshold* while the primary's
+    is below *primary_threshold*.
+    """
+    corrections: dict[int, str] = {}
+    for seg in entries:
+        if not hasattr(seg, "words") or not seg.words:
+            continue
+        for w in seg.words:
+            wid = id(w)
+            if wid not in divergences:
+                continue
+            s_text, s_conf = divergences[wid]
+            if not s_text:
+                continue
+            if w.prob < primary_threshold and s_conf >= secondary_threshold:
+                corrections[wid] = s_text
+    return corrections
+
+
+def _interactive_fix(
+    entries: list,
+    media: Path,
+    divergences: dict[int, tuple[str, float]] | None,
+    primary_threshold: float,
+    seg_text_overrides: dict[int, str],
+) -> None:
+    """Step through flagged segments, play audio, prompt for full text correction.
+
+    Mutates *seg_text_overrides* in-place: ``{id(seg): corrected_text}``.
+    """
+    import subprocess
+    import sys
+
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+
+    console = Console()
+
+    segments: list[SpeechBlock] = []
+    for seg in entries:
+        if not hasattr(seg, "words") or not seg.words:
+            continue
+        if id(seg) in seg_text_overrides:
+            continue
+        for w in seg.words:
+            wid = id(w)
+            if w.prob < primary_threshold:
+                segments.append(seg)
+                break
+            if divergences is not None and wid in divergences:
+                s_text, _ = divergences[wid]
+                if s_text:
+                    segments.append(seg)
+                    break
+
+    if not segments:
+        console.print("[dim]No segments need review.[/dim]")
+        return
+
+    for seg in segments:
+        table = Table(title=None, show_header=False, box=None, padding=(0, 1))
+        table.add_column(style="bold")
+        for w in seg.words:
+            wid = id(w)
+            flagged = w.prob < primary_threshold or (
+                divergences is not None
+                and wid in divergences
+                and divergences[wid][0]
+            )
+            if not flagged:
+                continue
+            conf_color = "red" if w.prob < 0.5 else "yellow" if w.prob < 0.8 else "green"
+            label = f"[{conf_color}]{w.text}[/{conf_color}] (conf: {w.prob:.2f})"
+            if divergences is not None and wid in divergences:
+                s_text, s_conf = divergences[wid]
+                if s_text:
+                    label += f"  ← [cyan]\"{s_text}\"[/cyan] ({s_conf:.0%} conf)"
+            table.add_row(label)
+        console.print()
+        console.print(
+            Panel(
+                seg.text.strip(),
+                title=f"[bold]{format_time(seg.start)}[/bold]  —  [bold]{format_time(seg.end)}[/bold]",
+                border_style="dim",
+            )
+        )
+        if table.row_count:
+            console.print(table)
+
+        seg_dur = float(seg.end - seg.start) + 0.6
+        seg_start = max(0.0, float(seg.start) - 0.3)
+        subprocess.run(
+            ["ffplay", "-ss", f"{seg_start:.2f}", "-t", f"{seg_dur:.1f}",
+             "-i", str(media), "-nodisp", "-autoexit"],
+            stdout=DEVNULL, stderr=DEVNULL,
+        )
+
+        import questionary
+        result = questionary.text(
+            "Edit transcription (Enter to keep):",
+            default=seg.text.strip(),
+        ).ask()
+        if result is None:
+            break
+        result = result.strip()
+        if result.lower() in ("q", "quit"):
+            break
+        if result.lower() in ("s", "skip"):
+            continue
+        if result == seg.text.strip():
+            continue
+        seg_text_overrides[id(seg)] = result
+
+
 def transcribe(args: Namespace) -> int:
-    """Transcribe a video/audio file to SRT captions."""
+    """Transcribe a video/audio file or directory to SRT captions."""
     import sys
     from tempfile import NamedTemporaryFile
 
-    media = args.media.expanduser()
     model_name = args.model if args.model != "default" else _default_model()
-    output = args.output or media.with_suffix(".srt")
+    language = getattr(args, "language", None)
+
+    if language and model_name.endswith(".en"):
+        model_name = model_name[:-3]
+        sys.stderr.write(
+            f"Language '{language}' specified, using multilingual model '{model_name}'\n"
+        )
 
     sys.stderr.write(
         f"Backend: {'GPU (Vulkan)' if _GPU else 'CPU'}  Model: {model_name}\n"
     )
 
-    tmp = NamedTemporaryFile(suffix=".wav")
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(media),
-        "-ac",
-        "1",
-        "-ar",
-        "16000",
-        "-c:a",
-        "pcm_s16le",
-        str(tmp.name),
-    ]
-    run(cmd, stderr=DEVNULL, stdout=DEVNULL, check=True)
-
     _preload_whisper_libs()
-
     from pywhispercpp.model import ContextParams, Model
 
     sys.stderr.write("Loading model ...\n")
     cp = ContextParams(use_gpu=_GPU, gpu_device=0, flash_attn=True)
     model = Model(model_name, n_threads=4, context_params=cp)
 
-    sys.stderr.write("Transcribing ...\n")
-    with wave.open(str(tmp.name), "rb") as wf:
-        raw = wf.readframes(wf.getnframes())
-        audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-        sr = wf.getframerate()
+    confidence_threshold = getattr(args, "confidence_threshold", None)
+    second_model_name = mname if (mname := getattr(args, "second_model", None)) and mname.lower() != "none" else None
+    do_review = getattr(args, "review", False) or second_model_name is not None
+    needs_words = confidence_threshold is not None or do_review or second_model_name is not None
 
-    with alive_bar(unknown="waves", title="Transcribing") as bar:
-        entries = _transcribe_chunks(audio, model, sr=sr, extract_words=False, bar=bar)
+    dir_path = getattr(args, "dir", None)
+    if dir_path:
+        media_files = sorted(
+            p for p in Path(dir_path).expanduser().iterdir()
+            if p.suffix.lower() in MEDIA_EXTENSIONS
+        )
+        if not media_files:
+            sys.stderr.write(f"No media files found in {dir_path}\n")
+            return 1
+    elif args.media:
+        media_files = [args.media.expanduser()]
+    else:
+        sys.stderr.write("Specify a media file or use --dir for bulk mode\n")
+        return 1
 
-    output.write_text(_format_srt(entries), encoding="utf-8")
-    sys.stderr.write(f"Wrote {output} ({len(entries)} segments)\n")
+    for media in media_files:
+        output = args.output or media.with_suffix(".srt")
+        if output.exists() and not getattr(args, "force", False):
+            sys.stderr.write(f"Skipping {media.name} ({output} exists)\n")
+            continue
+
+        sys.stderr.write(f"\n--- {media.name} ---\n")
+        tmp = NamedTemporaryFile(suffix=".wav")
+        cmd = [
+            "ffmpeg", "-y", "-i", str(media),
+            "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(tmp.name),
+        ]
+        run(cmd, stderr=DEVNULL, stdout=DEVNULL, check=True)
+
+        with wave.open(str(tmp.name), "rb") as wf:
+            raw = wf.readframes(wf.getnframes())
+            audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+            sr = wf.getframerate()
+
+        divergences: dict = {}
+        if second_model_name:
+            sys.stderr.write(f"Loading second model {second_model_name} ...\n")
+            cp2 = ContextParams(use_gpu=_GPU, gpu_device=0, flash_attn=True)
+            second_model = Model(second_model_name, n_threads=4, context_params=cp2)
+
+            from concurrent.futures import ThreadPoolExecutor
+            sys.stderr.write("Running parallel models (primary + secondary)...\n")
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                f1 = pool.submit(
+                    _transcribe_chunks, audio, model, sr=sr,
+                    extract_words=needs_words, bar=None, language=language,
+                )
+                f2 = pool.submit(
+                    _transcribe_chunks, audio, second_model, sr=sr,
+                    extract_words=True, bar=None, language=language,
+                )
+                entries = f1.result()
+                second_entries = f2.result()
+            sys.stderr.write("Parallel transcription complete — diffing...\n")
+            divergences = _diff_transcriptions(entries, second_entries)
+        else:
+            with alive_bar(unknown="waves", title="Transcribing") as bar:
+                entries = _transcribe_chunks(
+                    audio, model, sr=sr, extract_words=needs_words, bar=bar, language=language
+                )
+
+        corrections: dict[int, str] = {}
+        seg_text_overrides: dict[int, str] = {}
+        if divergences:
+            corrections = _auto_correct(
+                entries,
+                divergences,
+                primary_threshold=confidence_threshold or 0.8,
+                secondary_threshold=getattr(args, "auto_correct_threshold", 0.95),
+            )
+
+        if getattr(args, "interactive", False) and needs_words:
+            _interactive_fix(
+                entries,
+                media,
+                divergences or None,
+                confidence_threshold or 0.8,
+                seg_text_overrides,
+            )
+
+        srt_text = _format_srt(
+            entries,
+            confidence_threshold=confidence_threshold,
+            corrections=corrections or None,
+            seg_text_overrides=seg_text_overrides or None,
+        )
+        output.write_text(srt_text, encoding="utf-8")
+        if corrections:
+            sys.stderr.write(f"  Auto-corrected {len(corrections)} word(s).\n")
+        if seg_text_overrides:
+            sys.stderr.write(f"  Manually corrected {len(seg_text_overrides)} segment(s).\n")
+        sys.stderr.write(f"Wrote {output} ({len(entries)} segments)\n")
+
+        if do_review and needs_words:
+            _write_review(
+                entries,
+                media,
+                output,
+                confidence_threshold or 0.5,
+                model_name=model_name,
+                divergences=divergences or None,
+            )
+
     return 0
 
 
-def _format_srt(segments: list[SpeechBlock] | list[SentenceBlock]) -> str:
+MEDIA_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".wav", ".mp3", ".flac", ".m4a", ".ogg"}
+
+
+def _format_srt(
+    segments: list[SpeechBlock] | list[SentenceBlock],
+    confidence_threshold: float | None = None,
+    corrections: dict[int, str] | None = None,
+    seg_text_overrides: dict[int, str] | None = None,
+) -> str:
     lines: list[str] = []
     for i, seg in enumerate(segments, 1):
         lines.append(str(i))
-        lines.append(f"{format_time(seg.start)} --> {format_time(seg.end)}")
-        lines.append(seg.text.strip())
+        lines.append(
+            f"{format_time(seg.start).replace('.', ',')} --> {format_time(seg.end).replace('.', ',')}"
+        )
+        if seg_text_overrides and id(seg) in seg_text_overrides:
+            text = seg_text_overrides[id(seg)]
+        else:
+            text = seg.text.strip()
+            if corrections and hasattr(seg, "words") and seg.words:
+                for w in seg.words:
+                    wid = id(w)
+                    if wid in corrections:
+                        stripped = w.text.rstrip(".,!?;:\"'")
+                        punct = w.text[len(stripped):]
+                        correction = corrections[wid].rstrip(".,!?;:\"'") + punct
+                        text = text.replace(w.text, correction, 1)
+        if confidence_threshold is not None and hasattr(seg, "words") and seg.words:
+            low_conf = [w for w in seg.words if w.prob < confidence_threshold]
+            if low_conf:
+                notes = "; ".join(
+                    f"{w.text}? (conf: {w.prob:.2f})" for w in low_conf
+                )
+                lines.append(f"; LOW CONF: {notes}")
+        lines.append(text)
         lines.append("")
     return "\n".join(lines)
 
@@ -420,6 +876,26 @@ FILLER_WORDS = frozenset(
         "hmm",
         "mm",
         "mhm",
+    }
+)
+
+DISCOURSE_MARKERS = frozenset(
+    {
+        "like",
+        "actually",
+        "basically",
+        "literally",
+        "honestly",
+    }
+)
+
+DISCOURSE_PHRASES = frozenset(
+    {
+        ("you", "know"),
+        ("i", "mean"),
+        ("sort", "of"),
+        ("kind", "of"),
+        ("you", "see"),
     }
 )
 
@@ -441,6 +917,11 @@ def detect_self_repairs(
     filler_set: set[str] = FILLER_WORDS,
 ) -> list[SilenceBlock]:
     found: list[SilenceBlock] = []
+    for i in range(len(words) - 1):
+        w0 = words[i].text.lower().strip(".,!?;:\"'()[]{}")
+        w1 = words[i + 1].text.lower().strip(".,!?;:\"'()[]{}")
+        if w0 == w1:
+            found.append(SilenceBlock(start=words[i].start, end=words[i + 1].end))
     for i in range(len(words) - 2):
         w0 = words[i].text.lower().strip(".,!?;:\"'()[]{}")
         w1 = words[i + 1].text.lower().strip(".,!?;:\"'()[]{}")
@@ -449,7 +930,25 @@ def detect_self_repairs(
             start = words[i].start
             end = words[i + 1].end
             found.append(SilenceBlock(start=start, end=end))
-    return found
+    return merge_regions(found, padding=Decimal(0))
+
+
+def detect_discourse_markers(
+    words: list[WordBlock],
+    marker_set: set[str] = DISCOURSE_MARKERS,
+    phrase_set: set[tuple[str, str]] = DISCOURSE_PHRASES,
+) -> list[SilenceBlock]:
+    found: list[SilenceBlock] = []
+    for w in words:
+        clean = w.text.lower().strip(".,!?;:\"'()[]{}")
+        if clean in marker_set:
+            found.append(SilenceBlock(start=w.start, end=w.end))
+    for i in range(len(words) - 1):
+        w0 = words[i].text.lower().strip(".,!?;:\"'()[]{}")
+        w1 = words[i + 1].text.lower().strip(".,!?;:\"'()[]{}")
+        if (w0, w1) in phrase_set:
+            found.append(SilenceBlock(start=words[i].start, end=words[i + 1].end))
+    return merge_regions(found, padding=Decimal(0))
 
 
 def merge_regions(
@@ -523,6 +1022,7 @@ def _timeline_cut_regions(
     media_silences: dict[Path, list[SilenceBlock]],
     media_fillers: dict[Path, list[SilenceBlock]],
     media_repairs: dict[Path, list[SilenceBlock]],
+    media_discourse: dict[Path, list[SilenceBlock]] | None = None,
     padding: Decimal = Decimal("0.1"),
 ) -> dict[int, list[SilenceBlock]]:
     cut_regions: dict[int, list[SilenceBlock]] = {idx: [] for idx in track_indices}
@@ -539,6 +1039,7 @@ def _timeline_cut_regions(
                 media_silences.get(media_path, [])
                 + media_fillers.get(media_path, [])
                 + media_repairs.get(media_path, [])
+                + (media_discourse.get(media_path, []) if media_discourse else [])
             )
 
             for region in all_regions:
@@ -603,6 +1104,7 @@ def silence_removal(args: Namespace) -> int:
     if args.max_silence:
         max_silence = Decimal(str(args.max_silence))
 
+    mode = getattr(args, "mode", "standard")
     filler_set = set(FILLER_WORDS)
     if args.filler_words:
         filler_set.update(w.strip().lower() for w in args.filler_words.split(","))
@@ -616,16 +1118,47 @@ def silence_removal(args: Namespace) -> int:
         sc, track_indices, channels, threshold_db, min_silence, max_silence
     )
 
+    if mode == "basic":
+        cut_regions = _timeline_cut_regions(
+            sc,
+            track_indices,
+            media_silences,
+            media_fillers={},
+            media_repairs={},
+            media_discourse={},
+            padding=padding,
+        )
+        _apply_cuts(sc, cut_regions)
+        output_path = args.output or project_path
+        sc.save(Path(output_path).expanduser())
+        return 0
+
+    import sys
     media_fillers: dict[Path, list[SilenceBlock]] = {}
     media_repairs: dict[Path, list[SilenceBlock]] = {}
+    media_discourse: dict[Path, list[SilenceBlock]] = {}
     for media_path in media_silences:
         words = detect_words(media=media_path, channels=channels, model_name=model)
         all_word_blocks = [w for seg in words for w in seg.words]
         media_fillers[media_path] = detect_fillers(all_word_blocks, filler_set)
-        media_repairs[media_path] = detect_self_repairs(all_word_blocks, filler_set)
+        if mode in ("full",):
+            media_repairs[media_path] = detect_self_repairs(all_word_blocks, filler_set)
+            media_discourse[media_path] = detect_discourse_markers(all_word_blocks)
+            n_rep = len(media_repairs[media_path])
+            n_disc = len(media_discourse[media_path])
+            if n_rep or n_disc:
+                sys.stderr.write(
+                    f"  {media_path.name}: {n_rep} repair(s), {n_disc} discourse marker(s)\n"
+                )
 
     cut_regions = _timeline_cut_regions(
-        sc, track_indices, media_silences, media_fillers, media_repairs, padding
+        sc,
+        track_indices,
+        media_silences,
+        media_fillers,
+        media_repairs,
+        media_discourse,
+        padding=padding,
     )
 
     _apply_cuts(sc, cut_regions)

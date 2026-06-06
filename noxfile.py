@@ -15,27 +15,32 @@ nox.options.sessions = []
 
 
 def _ensure_whisper(session: nox.Session) -> None:
-    """Install pywhispercpp only if not already present in the session venv."""
-    try:
-        out = session.run(
-            "python3",
-            "-c",
-            "import _pywhispercpp; print('yes')",
-            silent=True,
-            log=False,
+    """Install pywhispercpp to a persistent shared directory (one-time build).
+
+    All whisper-dependent sessions share this single install target at
+    ``~/.cache/yt-automation/whisper-site/`` instead of each rebuilding
+    from git into their own venv.
+    """
+    from pathlib import Path
+
+    whisper_site = Path.home() / ".cache" / "yt-automation" / "whisper-site"
+
+    if not list(whisper_site.glob("_pywhispercpp*.so*")):
+        whisper_site.mkdir(parents=True, exist_ok=True)
+        session.log("Building pywhispercpp with Vulkan GPU support ...")
+        session.install("-r", requirements_base)
+        session.run(
+            "python3", "-m", "pip", "install",
+            "--target", str(whisper_site),
+            "git+https://github.com/absadiki/pywhispercpp",
+            env={"GGML_VULKAN": "1"},
         )
-        if out and out.strip() == "yes":
-            session.log("pywhispercpp already installed, skipping rebuild.")
-            return
-    except Exception:
-        pass
-    session.install("-r", requirements_base)
-    session.log("Building pywhispercpp with Vulkan GPU support ...")
-    session.install(
-        "git+https://github.com/absadiki/pywhispercpp",
-        env={"GGML_VULKAN": "1"},
-    )
-    session.log("pywhispercpp installed (GPU build if glslc was found).")
+        session.log("pywhispercpp installed to %s", whisper_site)
+    else:
+        session.log(f"pywhispercpp already built at {whisper_site}")
+        # Always install runtime deps into the session venv (it's fresh each
+        # time), even when pywhispercpp itself is cached in the shared dir.
+        session.install("-r", requirements_base)
 
 
 def _run(session: nox.Session, *args: str) -> None:

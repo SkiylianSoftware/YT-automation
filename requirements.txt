@@ -1,3 +1,2 @@
 -r requirements-base.txt
 -r requirements-google.txt
--r requirements-whisper.txt

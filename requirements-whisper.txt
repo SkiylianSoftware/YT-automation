@@ -1,1 +1,6 @@
-pywhispercpp
+# pywhispercpp is now installed via noxfile.py's _ensure_whisper()
+# which builds from git with GGML_VULKAN=1 into a persistent shared
+# directory (~/.cache/yt-automation/whisper-site/).
+#
+# This file is kept for reference only and is no longer included by
+# requirements.txt.
