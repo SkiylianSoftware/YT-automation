@@ -2,14 +2,35 @@
 
 from __future__ import annotations
 
+import random
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from logging import Logger, getLogger
 from os import getenv
 from pathlib import Path
+from typing import Callable, TypeVar
 
 from dotenv import load_dotenv
-from pyyoutube import AccessToken, Channel, Client, Playlist, Video
+from pyyoutube import AccessToken, Caption, Channel, Client, Playlist, Video
+from pyyoutube.error import PyYouTubeException
+
+T = TypeVar("T")
+
+# Short-term / transient failures that are worth retrying with backoff.
+RETRIABLE_REASONS = {
+    "rateLimitExceeded",
+    "userRateLimitExceeded",
+    "backendError",
+    "internalError",
+    "SERVICE_UNAVAILABLE",
+}
+# Daily quota exhaustion; retrying within the same day is pointless.
+QUOTA_REASONS = {"quotaExceeded", "dailyLimitExceeded"}
+
+
+class QuotaExceededError(RuntimeError):
+    """Raised when the daily YouTube API quota has been exhausted."""
 
 
 @dataclass
@@ -20,10 +41,85 @@ class YouTube:
 
     client: Client = None
 
+    # force-ssl is required to list/delete caption tracks; the other two match
+    # pyyoutube's defaults for video/profile access.
+    scopes = (
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+        "https://www.googleapis.com/auth/youtube",
+        "https://www.googleapis.com/auth/userinfo.profile",
+    )
+
     @property
     def logger(self) -> Logger:
         """Logger for the API."""
         return getLogger("youtube-api")
+
+    @staticmethod
+    def __error_reason__(exc: PyYouTubeException) -> str:
+        """Extract the machine-readable error reason from an API exception."""
+        response = getattr(exc, "response", None)
+        if response is None:
+            return ""
+        try:
+            errors = response.json().get("error", {}).get("errors", [])
+        except Exception:
+            return ""
+        return errors[0].get("reason", "") if errors else ""
+
+    def __call_api__(
+        self,
+        func: Callable[..., T],
+        *args: object,
+        retries: int = 5,
+        base_delay: float = 2.0,
+        **kwargs: object,
+    ) -> T:
+        """Call an API function, retrying transient errors with backoff.
+
+        Daily quota exhaustion raises QuotaExceededError immediately, since it
+        cannot recover until the quota resets.
+        """
+        for attempt in range(1, retries + 1):
+            try:
+                return func(*args, **kwargs)
+            except PyYouTubeException as e:
+                reason = self.__error_reason__(e)
+                if reason in QUOTA_REASONS:
+                    raise QuotaExceededError(
+                        "Daily YouTube API quota exhausted. It resets at "
+                        "midnight US Pacific; re-run afterwards. Already "
+                        "cleaned videos are skipped automatically."
+                    ) from e
+
+                retriable = reason in RETRIABLE_REASONS or e.status_code in {
+                    429,
+                    500,
+                    503,
+                }
+                if not retriable or attempt == retries:
+                    raise
+
+                delay = base_delay * 2 ** (attempt - 1) + random.uniform(0, 1)
+                self.logger.warning(
+                    f"Transient API error '{reason or e.status_code}'; "
+                    f"retry {attempt}/{retries - 1} in {delay:.1f}s"
+                )
+                time.sleep(delay)
+        # Unreachable, but satisfies the type checker.
+        raise RuntimeError("Retry loop exited unexpectedly")
+
+    def __raw_request__(
+        self,
+        path: str,
+        method: str = "GET",
+        params: dict | None = None,
+        json: dict | None = None,
+    ) -> dict:
+        """Issue a raw API request and parse it (raises on API errors)."""
+        response = self.client.request(
+            method=method, path=path, params=params, json=json
+        )
+        return self.client.parse_response(response)
 
     def __write_creds__(self, token: AccessToken) -> None:
         """Store the credentials to the persistent location."""
@@ -48,9 +144,17 @@ class YouTube:
             )
         self.logger.debug("Access token not found, requesting authorisation")
         auth_url, _ = self.client.get_authorize_url()
-        print(f"Visit {auth_url} to authorise this application.")
+        print(
+            "\nYouTube authorisation required:\n"
+            "  1. Open this URL in a chromium browser and approve access:\n"
+            f"     {auth_url}\n"
+            "  2. Your browser will then land on a 'localhost refused to connect'\n"
+            "     page. This is EXPECTED; nothing is served on localhost.\n"
+            "  3. Copy the FULL URL from the browser's address bar (it contains\n"
+            "     '?code=...') and paste it below.\n"
+        )
         token = self.client.generate_access_token(
-            authorization_response=input("Insert the redirect URL here:\n> ")
+            authorization_response=input("Paste the redirect URL here:\n> ")
         )
         self.logger.debug("Auth complete")
         return token
@@ -68,6 +172,8 @@ class YouTube:
             access_token=getenv("access_token"),
             refresh_token=getenv("refresh_token"),
         )
+        # Ensure caption scopes are requested when (re)authorising.
+        self.client.DEFAULT_SCOPE = list(self.scopes)
         self.logger.debug(f"Authenticating with client {self.client.client_id}")
 
         try:
@@ -96,7 +202,7 @@ class YouTube:
     @property
     def me(self) -> Channel:
         """Primary channel for the authenticated client."""
-        return self.client.channels.list(mine=True).items[0]
+        return self.__call_api__(self.client.channels.list, mine=True).items[0]
 
     @property
     def channel_name(self) -> str:
@@ -129,16 +235,32 @@ class YouTube:
     @property
     def playlists(self) -> list[Playlist]:
         """List of all playlists for `me`."""
-        return self.client.playlists.list(mine=True).items
+        return self.__call_api__(self.client.playlists.list, mine=True).items
 
     def playlist_videos(self, playlist_id: str) -> list[Video]:
         """List of all `videos` in the playlist with ID `playlist_id`."""
+        # playlistItems.list is capped at 50 per page, so follow nextPageToken.
+        video_ids: list[str] = []
+        page_token: str | None = None
+        while True:
+            page = self.__call_api__(
+                self.client.playlistItems.list,
+                playlist_id=playlist_id,
+                parts="contentDetails",
+                max_results=50,
+                page_token=page_token,
+            )
+            video_ids.extend(item.contentDetails.videoId for item in page.items)
+            page_token = page.nextPageToken
+            if not page_token:
+                break
+
+        # videos.list accepts up to 50 IDs per call.
         videos: list[Video] = []
-        for item in self.client.playlistItems.list(
-            playlist_id=playlist_id, max_results=int(1e6)
-        ).items:
+        for start in range(0, len(video_ids), 50):
+            batch = video_ids[start : start + 50]
             videos.extend(
-                self.client.videos.list(video_id=item.contentDetails.videoId).items
+                self.__call_api__(self.client.videos.list, video_id=batch).items
             )
         return videos
 
@@ -196,3 +318,66 @@ class YouTube:
     def video(self, video_id: str) -> Video:
         """Return video object from video ID."""
         return self.client.videos.list(video_id=video_id).items[0]
+
+    # Translation operations
+
+    def video_localizations(self, video_id: str) -> dict[str, dict[str, str]]:
+        """Return the localizations (translated titles/descriptions) for a video."""
+        # pyyoutube's part allow-list omits "localizations", so bypass the
+        # resource wrapper and hit the endpoint directly.
+        data = self.__call_api__(
+            self.__raw_request__,
+            path="videos",
+            params={"part": "localizations", "id": video_id},
+        )
+        items = data.get("items") or []
+        if not items:
+            return {}
+        return items[0].get("localizations") or {}
+
+    def set_video_localizations(
+        self, video: Video, localizations: dict[str, dict[str, str]]
+    ) -> None:
+        """Replace a video's localizations, preserving its canonical snippet."""
+        snippet = video.snippet
+        body: dict = {
+            "id": video.id,
+            "snippet": {
+                "title": snippet.title,
+                "categoryId": snippet.categoryId,
+                "description": snippet.description,
+            },
+            "localizations": localizations,
+        }
+        # Only send optional snippet fields when present to avoid clobbering them.
+        if snippet.tags:
+            body["snippet"]["tags"] = snippet.tags
+        # The API rejects a non-empty localizations block without a
+        # defaultLanguage, so fall back to a kept language when it is missing.
+        default_language = snippet.defaultLanguage
+        if not default_language and localizations:
+            default_language = sorted(localizations)[0]
+        if default_language:
+            body["snippet"]["defaultLanguage"] = default_language
+        # "localizations" is a valid API part but rejected by pyyoutube's
+        # allow-list, so issue the update request directly.
+        self.__call_api__(
+            self.__raw_request__,
+            method="PUT",
+            path="videos",
+            params={"part": "snippet,localizations"},
+            json=body,
+        )
+
+    def video_captions(self, video_id: str) -> list[Caption]:
+        """Return the caption tracks associated with a video."""
+        return (
+            self.__call_api__(
+                self.client.captions.list, video_id=video_id, parts="snippet"
+            ).items
+            or []
+        )
+
+    def delete_caption(self, caption_id: str) -> None:
+        """Delete a caption track by ID."""
+        self.__call_api__(self.client.captions.delete, caption_id=caption_id)

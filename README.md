@@ -7,6 +7,7 @@ Scripts I use for youtube automation.
 - Playlist Automation - Automatically add videos to their respective playlists based on video and playlist title. 
 - Calendar Automation - Automatically put released and upcoming videos in two google calendars based on publish date.
 - Background Music    - Automatically populate a shotcut file with a random selection of background music in its own track.
+- Translation Removal - Strip YouTube's auto-generated translations (translated titles/descriptions and auto/translated captions) from every video, and report any dubs or translated thumbnails that must be removed by hand.
 
 ## Setup
 
@@ -59,6 +60,12 @@ To automatically populate a google calendar with scheduled and past uploads, run
 
 To automatically populate a google calendar with scheduled and past uploads, run `nox -- background-music`
     run `nox -- background-music --help` for further help.
+
+To strip YouTube's auto-generated translations from every video, run `nox -- translation-automation`
+    run `nox -- translation-automation --help` for further help.
+    By default only `en-GB` is kept; every other localized title/description and caption track is removed. Override the allowed set with `--keep-language en-GB en-US ...`.
+    Note: the Data API can only prune translated titles/descriptions and auto/translated caption tracks. Auto-dubbed audio tracks and translated thumbnails have no API and must be removed manually in YouTube Studio; every video is listed with a Studio link in the generated audit report (`translation-audit.md` by default). Pass `--dry-run` to preview changes without writing them. Caption management additionally requires the `youtube.force-ssl` OAuth scope, so re-authenticate if you have not run this since the scope was added.
+    Quota: caption and localization writes cost 50 API units each, so a full run of a large channel can approach the default 10,000 unit daily quota (which resets at midnight US Pacific). The tool retries transient rate-limit errors with backoff and stops cleanly when the daily quota is exhausted; re-run after the reset to continue (already-cleaned videos are skipped). Use `--limit N` to deliberately process only the first N videos per run.
 
 To ensure all client credentials are up to date, run `nox -- reauth-client`
     run `nox -- reauth-client --help` for further help.

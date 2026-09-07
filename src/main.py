@@ -11,6 +11,7 @@ from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
 from .re_auth import re_auth
 from .run_all import add_combined, run_all
+from .translation_automation import translation_automation
 from .youtube import YouTube
 
 
@@ -35,12 +36,16 @@ def setup_parser() -> ArgumentParser:
         "clearing at each execution",
     )
 
-    subcommands = parser.add_subparsers(help="sub-command help")
+    subcommands = parser.add_subparsers(
+        title="commands", metavar="<command>", help="(aliases shown in parentheses)"
+    )
 
     # Playlist automation
 
     playlist_parser = subcommands.add_parser(
-        "playlist-automation", aliases=["playlist"]
+        "playlist-automation",
+        aliases=["playlist"],
+        help="Add videos to their respective playlists based on title",
     )
     playlist_parser.add_argument(
         "--env-youtube",
@@ -52,7 +57,9 @@ def setup_parser() -> ArgumentParser:
 
     # Calendar automation
     calendar_parser = subcommands.add_parser(
-        "calendar-automation", aliases=["calendar"]
+        "calendar-automation",
+        aliases=["calendar"],
+        help="Sync released and upcoming videos into google calendars",
     )
     calendar_parser.set_defaults(func=calendar_automation)
     calendar_parser.add_argument(
@@ -74,6 +81,46 @@ def setup_parser() -> ArgumentParser:
         help="Timezone to use if creating new calendars, or adding events to calendars",
     )
 
+    # Translation removal
+    translation_parser = subcommands.add_parser(
+        "translation-automation",
+        aliases=["translations", "detranslate"],
+        help="Strip auto-generated translations from every video",
+    )
+    translation_parser.add_argument(
+        "--env-youtube",
+        type=Path,
+        default=Path(".env.youtube"),
+        help="Filepath for the youtube credentials",
+    )
+    translation_parser.add_argument(
+        "--report-path",
+        type=Path,
+        default=Path("translation-audit.md"),
+        help="Filepath for the audit report of remaining manual translations",
+    )
+    translation_parser.add_argument(
+        "--keep-language",
+        type=str,
+        nargs="+",
+        default=["en-GB"],
+        help="Language tag(s) to keep; every other translation is removed "
+        "(default: en-GB)",
+    )
+    translation_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Only process the first N videos this run, to stay within the "
+        "daily API quota; re-run later to continue",
+    )
+    translation_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview what would be removed without writing any changes",
+    )
+    translation_parser.set_defaults(func=translation_automation)
+
     # Re-auth endpoint inherits from essentially all parsers.
     add_combined(
         subcommands,
@@ -82,10 +129,15 @@ def setup_parser() -> ArgumentParser:
         name="reauth-clients",
         aliases="reauth",
         function=re_auth,
+        help="Re-authenticate to every external service",
     )
 
     # Background music automation
-    music_parser = subcommands.add_parser("background-music", aliases=["music"])
+    music_parser = subcommands.add_parser(
+        "background-music",
+        aliases=["music"],
+        help="Populate a shotcut project with random background music",
+    )
     music_project = music_parser.add_mutually_exclusive_group(required=True)
     music_project.add_argument(
         "--project",
@@ -140,9 +192,11 @@ def setup_parser() -> ArgumentParser:
         subcommands,
         "playlist-automation",
         "calendar-automation",
+        "translation-automation",
         name="all-automation",
         aliases=["everything", "all"],
         function=run_all,
+        help="Run every automation that targets external services",
     )
 
     return parser
@@ -190,7 +244,7 @@ def main() -> int:
         # A lot of scripts inherit the youtube environment
         if yt := getattr(args, "env_youtube", None):
             try:
-                yt = YouTube(youtube_env=yt)  # type:ignore [call-arg]
+                yt = YouTube(youtube_env=yt)  # type: ignore [call-arg]
                 yt.authenticate()
             except Exception as e:
                 log.error("Could not authenticate to YouTube")

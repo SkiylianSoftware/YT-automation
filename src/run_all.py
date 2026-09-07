@@ -4,6 +4,7 @@ from typing import Callable
 
 from .calendar_automation import calendar_automation
 from .playlist_automation import playlist_automation
+from .translation_automation import translation_automation
 from .youtube import YouTube
 
 LOG = getLogger("combined")
@@ -15,10 +16,13 @@ def add_combined(
     name: str,
     function: Callable[[Namespace, YouTube], int],
     aliases: str | list[str] = [],
+    help: str | None = None,
 ) -> ArgumentParser:
     """Generate a subparser with the arguments of the provided set of target parsers."""
     combined_parser: ArgumentParser = subcommands.add_parser(
-        name, aliases=[aliases] if isinstance(aliases, str) else aliases
+        name,
+        aliases=[aliases] if isinstance(aliases, str) else aliases,
+        help=help,
     )
 
     # dynamically generate
@@ -46,6 +50,10 @@ def run_all(args: Namespace, yt: YouTube) -> int:
 
     LOG.info("Running playlist entrypoint")
     if playlist_automation(args=args, yt=yt):
+        return 1
+
+    LOG.info("Running translation entrypoint")
+    if translation_automation(args=args, yt=yt):
         return 1
 
     LOG.info("Successfully executed all entrypoints")
